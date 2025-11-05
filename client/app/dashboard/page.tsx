@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Playlists from '../components/Playlists';
 import axios from 'axios';
 
 interface User {
@@ -199,90 +200,99 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Service Connection Cards */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4">Connect Services</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left Column - Services & Transfer */}
+          <div className="space-y-6">
+            {/* Service Connection Cards */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold mb-4">Connect Services</h2>
 
-            <div className="space-y-4">
+              <div className="space-y-4">
+                <button
+                  onClick={() => handleConnectService('spotify')}
+                  disabled={isServiceConnected('spotify')}
+                  className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${isServiceConnected('spotify')
+                      ? 'bg-green-500 text-white opacity-50 cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                    }`}
+                >
+                  <span>
+                    {isServiceConnected('spotify') ? 'Spotify Connected' : 'Connect Spotify'}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleConnectService('youtube')}
+                  disabled={isServiceConnected('youtube')}
+                  className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${isServiceConnected('youtube')
+                      ? 'bg-red-500 text-white opacity-50 cursor-not-allowed'
+                      : 'bg-red-600 text-white hover:bg-red-700'
+                    }`}
+                >
+                  <span>
+                    {isServiceConnected('youtube') ? 'YouTube Music Connected' : 'Connect YouTube Music'}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Playlist Transfer */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold mb-4">Transfer Playlists</h2>
+              <p className="text-gray-600 mb-4">
+                Select playlists to transfer between services.
+              </p>
               <button
-                onClick={() => handleConnectService('spotify')}
-                disabled={isServiceConnected('spotify')}
-                className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${isServiceConnected('spotify')
-                    ? 'bg-green-500 text-white opacity-50 cursor-not-allowed'
-                    : 'bg-green-600 text-white hover:bg-green-700'
+                disabled={connectedServices.length < 2}
+                className={`w-full py-3 px-4 rounded-md ${connectedServices.length < 2
+                    ? 'bg-blue-400 text-white opacity-50 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
               >
-                <span>
-                  {isServiceConnected('spotify') ? 'Spotify Connected' : 'Connect Spotify'}
-                </span>
+                {connectedServices.length < 2
+                  ? 'Connect at least 2 services'
+                  : 'Select Playlists to Transfer'
+                }
               </button>
+            </div>
 
-              <button
-                onClick={() => handleConnectService('youtube')}
-                disabled={isServiceConnected('youtube')}
-                className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${isServiceConnected('youtube')
-                    ? 'bg-red-500 text-white opacity-50 cursor-not-allowed'
-                    : 'bg-red-600 text-white hover:bg-red-700'
-                  }`}
-              >
-                <span>
-                  {isServiceConnected('youtube') ? 'YouTube Music Connected' : 'Connect YouTube Music'}
-                </span>
-              </button>
+            {/* Connected Services */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold mb-4">Connected Services</h2>
+              {servicesLoading ? (
+                <div className="flex justify-center">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {['spotify', 'youtube'].map((service) => (
+                    <div key={service} className="flex items-center justify-between p-3 bg-gray-50 rounded">
+                      <div>
+                        <span className="font-medium">{getServiceDisplayName(service)}</span>
+                        {isServiceConnected(service) && (
+                          <p className="text-xs text-gray-500">{getServiceUserName(service)}</p>
+                        )}
+                      </div>
+                      {isServiceConnected(service) ? (
+                        <span className="text-green-500 text-sm">Connected</span>
+                      ) : (
+                        <span className="text-red-500 text-sm">Not Connected</span>
+                      )}
+                    </div>
+                  ))}
+
+                  {connectedServices.length === 0 && (
+                    <p className="text-gray-500 text-center py-4">No services connected yet</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Playlist Transfer */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4">Transfer Playlists</h2>
-            <p className="text-gray-600 mb-4">
-              Connect services to start transferring playlists between platforms.
-            </p>
-            <button
-              disabled={connectedServices.length < 2}
-              className={`w-full py-3 px-4 rounded-md ${connectedServices.length < 2
-                  ? 'bg-blue-400 text-white opacity-50 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-                }`}
-            >
-              {connectedServices.length < 2
-                ? 'Connect at least 2 services'
-                : 'Transfer Playlist (Coming Soon)'
-              }
-            </button>
-          </div>
-
-          {/* Connected Services */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4">Connected Services</h2>
-            {servicesLoading ? (
-              <div className="flex justify-center">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {['spotify', 'youtube'].map((service) => (
-                  <div key={service} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                    <div>
-                      <span className="font-medium">{getServiceDisplayName(service)}</span>
-                      {isServiceConnected(service) && (
-                        <p className="text-xs text-gray-500">{getServiceUserName(service)}</p>
-                      )}
-                    </div>
-                    {isServiceConnected(service) ? (
-                      <span className="text-green-500 text-sm">Connected</span>
-                    ) : (
-                      <span className="text-red-500 text-sm">Not Connected</span>
-                    )}
-                  </div>
-                ))}
-
-                {connectedServices.length === 0 && (
-                  <p className="text-gray-500 text-center py-4">No services connected yet</p>
-                )}
-              </div>
-            )}
+          {/* Right Column - Playlists */}
+          <div className="space-y-6">
+            <Playlists service="spotify" isConnected={isServiceConnected('spotify')} />
+            <Playlists service="youtube" isConnected={isServiceConnected('youtube')} />
           </div>
         </div>
 
@@ -296,8 +306,6 @@ export default function Dashboard() {
               service_type: s.service_type,
               service_user_name: s.service_user_name
             })))}</p>
-            <p>Is Spotify connected: {isServiceConnected('spotify') ? 'Yes' : 'No'}</p>
-            <p>Is YouTube connected: {isServiceConnected('youtube') ? 'Yes' : 'No'}</p>
           </div>
         </div>
       </main>

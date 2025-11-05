@@ -58,6 +58,14 @@ func main() {
 		{
 			protected.GET("/auth/me", handlers.HandleGetCurrentUser)
 			protected.GET("/services", handlers.HandleGetConnectedServices)
+
+			// Playlists routes
+			playlistsGroup := protected.Group("/playlists")
+			{
+				playlistsGroup.GET("/:service", handlers.GetPlaylists)
+				playlistsGroup.GET("/:service/stored", handlers.GetStoredPlaylists)
+				playlistsGroup.POST("/sync", handlers.SyncAllPlaylists)
+			}
 		}
 
 		// Health check (public)

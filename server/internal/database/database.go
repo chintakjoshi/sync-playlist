@@ -31,6 +31,32 @@ type UserService struct {
 	ServiceUserName string `json:"service_user_name"`
 }
 
+type Playlist struct {
+	gorm.Model
+	UserID       uint   `gorm:"not null" json:"user_id"`
+	ServiceType  string `gorm:"not null" json:"service_type"` // "spotify", "youtube"
+	ServiceID    string `gorm:"not null" json:"service_id"`   // ID from the service
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	TrackCount   int    `json:"track_count"`
+	ImageURL     string `json:"image_url"`
+	IsPublic     bool   `json:"is_public"`
+	LastSyncedAt int64  `json:"last_synced_at"`
+}
+
+type PlaylistTrack struct {
+	gorm.Model
+	PlaylistID   uint   `gorm:"not null" json:"playlist_id"`
+	ServiceType  string `gorm:"not null" json:"service_type"`
+	ServiceID    string `gorm:"not null" json:"service_id"` // Track ID from the service
+	Title        string `json:"title"`
+	Artist       string `json:"artist"`
+	Album        string `json:"album"`
+	Duration     int    `json:"duration"` // in milliseconds
+	ISRC         string `json:"isrc"`     // International Standard Recording Code
+	ThumbnailURL string `json:"thumbnail_url"`
+}
+
 func InitDB() error {
 	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
@@ -47,7 +73,7 @@ func InitDB() error {
 	}
 
 	// Auto migrate tables
-	err = db.AutoMigrate(&User{}, &UserService{})
+	err = db.AutoMigrate(&User{}, &UserService{}, &Playlist{}, &PlaylistTrack{})
 	if err != nil {
 		return err
 	}
