@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -27,8 +28,6 @@ func HandleConnectService(c *gin.Context) {
 	}
 
 	// For OAuth flows, we need to identify the user differently since this is a browser redirect
-	// We'll use a session token or state parameter to identify the user
-	// For now, we'll get user ID from query parameter or use a default
 	userIDStr := c.Query("user_id")
 	var userID uint = 1 // Default fallback
 
@@ -43,6 +42,12 @@ func HandleConnectService(c *gin.Context) {
 
 	url := config.AuthCodeURL(state)
 	log.Printf("Redirecting user %d to %s OAuth: %s", userID, provider, url)
+
+	// Special logging for YouTube to help debug
+	if provider == "youtube" {
+		log.Printf("YouTube OAuth config - ClientID: %s, Scopes: %v", config.ClientID, config.Scopes)
+	}
+
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
@@ -88,7 +93,8 @@ func HandleServiceCallback(c *gin.Context) {
 	var serviceUserID, serviceUserName string
 
 	// Get user info from the service
-	if provider == "spotify" {
+	switch provider {
+	case "spotify":
 		client := config.Client(context.Background(), token)
 		resp, err := client.Get("https://api.spotify.com/v1/me")
 		if err != nil {
@@ -121,10 +127,78 @@ func HandleServiceCallback(c *gin.Context) {
 			}
 			log.Printf("Spotify user: %s (%s)", serviceUserName, serviceUserID)
 		}
+
+	case "youtube":
+		log.Printf("YouTube token obtained: %+v", token)
+		client := config.Client(context.Background(), token)
+
+		// First, try to get basic Google user info (this usually works with any Google scope)
+		userInfoResp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+		if err != nil {
+			log.Printf("Failed to get Google user info: %v", err)
+			// Continue without user info, we'll use a default
+		} else {
+			defer userInfoResp.Body.Close()
+			var userInfo struct {
+				Name  string `json:"name"`
+				Email string `json:"email"`
+				ID    string `json:"id"`
+			}
+			if err := json.NewDecoder(userInfoResp.Body).Decode(&userInfo); err == nil {
+				serviceUserID = userInfo.ID
+				serviceUserName = userInfo.Name
+				if serviceUserName == "" {
+					serviceUserName = userInfo.Email
+				}
+				log.Printf("YouTube user (from Google profile): %s (%s)", serviceUserName, serviceUserID)
+			} else {
+				log.Printf("Failed to parse Google user info: %v", err)
+			}
+		}
+
+		// Try to get YouTube channel info with the readonly scope
+		// Note: This might fail with youtube.readonly scope, but let's try
+		channelResp, err := client.Get("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true")
+		if err != nil {
+			log.Printf("Failed to get YouTube channels (this might be expected with readonly scope): %v", err)
+			// This is expected with youtube.readonly scope, so we don't treat it as an error
+		} else {
+			defer channelResp.Body.Close()
+
+			if channelResp.StatusCode == http.StatusOK {
+				// Parse YouTube channel info
+				var youtubeResponse struct {
+					Items []struct {
+						ID      string `json:"id"`
+						Snippet struct {
+							Title string `json:"title"`
+						} `json:"snippet"`
+					} `json:"items"`
+				}
+
+				if err := json.NewDecoder(channelResp.Body).Decode(&youtubeResponse); err != nil {
+					log.Printf("Failed to parse YouTube response: %v", err)
+				} else if len(youtubeResponse.Items) > 0 {
+					// If we successfully got channel info, use it instead of basic user info
+					serviceUserID = youtubeResponse.Items[0].ID
+					serviceUserName = youtubeResponse.Items[0].Snippet.Title
+					log.Printf("YouTube channel: %s (%s)", serviceUserName, serviceUserID)
+				}
+			} else {
+				body, _ := io.ReadAll(channelResp.Body)
+				log.Printf("YouTube channels API returned status: %d, body: %s", channelResp.StatusCode, string(body))
+				// This is normal with reduced scopes, so we don't treat it as an error
+			}
+		}
+
+		// If we still don't have user info, set a default
+		if serviceUserName == "" {
+			serviceUserName = "YouTube User"
+			log.Printf("Using default YouTube user name")
+		}
 	}
 
 	// Extract user ID from state parameter for security
-	// In a production app, you'd want to use a proper state token with signature verification
 	var userID uint = 1 // Default fallback
 
 	// Simple state parsing: "user-{id}"

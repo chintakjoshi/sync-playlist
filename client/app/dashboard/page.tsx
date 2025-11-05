@@ -148,7 +148,11 @@ export default function Dashboard() {
 
   const getServiceUserName = (serviceType: string) => {
     const service = connectedServices.find(s => s.service_type === serviceType);
-    return service?.service_user_name || 'Connected';
+
+    if (!service) return 'Not Connected';
+
+    // Return the actual username from the service, or a default
+    return service.service_user_name || 'Connected';
   };
 
   if (loading) {

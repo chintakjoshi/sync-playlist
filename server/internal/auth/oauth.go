@@ -38,8 +38,12 @@ func InitOAuthConfigs() {
 		ClientID:     os.Getenv("YOUTUBE_CLIENT_ID"),
 		ClientSecret: os.Getenv("YOUTUBE_CLIENT_SECRET"),
 		RedirectURL:  os.Getenv("BACKEND_URL") + "/api/services/callback/youtube",
-		Scopes:       []string{"https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtubepartner"},
-		Endpoint:     google.Endpoint,
+		Scopes: []string{
+			"https://www.googleapis.com/auth/youtube",          // Manage YouTube account
+			"https://www.googleapis.com/auth/youtube.readonly", // View YouTube data
+			"https://www.googleapis.com/auth/userinfo.profile",
+		},
+		Endpoint: google.Endpoint,
 	}
 }
 
