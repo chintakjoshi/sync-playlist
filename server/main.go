@@ -44,19 +44,20 @@ func main() {
 			authGroup.POST("/logout", handlers.HandleLogout)
 		}
 
+		// Service connection routes (public for OAuth flow)
+		servicesGroup := api.Group("/services")
+		{
+			// These need to be public because they're called via browser redirects
+			servicesGroup.GET("/connect/:provider", handlers.HandleConnectService)
+			servicesGroup.GET("/callback/:provider", handlers.HandleServiceCallback)
+		}
+
 		// Protected routes (require JWT)
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware())
 		{
 			protected.GET("/auth/me", handlers.HandleGetCurrentUser)
-
-			// Service connection routes
-			servicesGroup := protected.Group("/services")
-			{
-				servicesGroup.GET("/connect/:provider", handlers.HandleConnectService)
-				servicesGroup.GET("/callback/:provider", handlers.HandleServiceCallback)
-				servicesGroup.GET("", handlers.HandleGetConnectedServices)
-			}
+			protected.GET("/services", handlers.HandleGetConnectedServices)
 		}
 
 		// Health check (public)

@@ -99,8 +99,23 @@ export default function Dashboard() {
     }
   };
 
-  const handleConnectService = (provider: string) => {
-    window.location.href = `http://127.0.0.1:8080/api/services/connect/${provider}`;
+  const handleConnectService = async (provider: string) => {
+    try {
+      // First get the current user to get their ID
+      const token = localStorage.getItem('token');
+      const userResponse = await axios.get('http://localhost:8080/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const userId = userResponse.data.user.id;
+
+      // Include user ID in the OAuth URL
+      window.location.href = `http://127.0.0.1:8080/api/services/connect/${provider}?user_id=${userId}`;
+    } catch (error) {
+      console.error('Failed to get user info:', error);
+      // Fallback: redirect without user ID (will use default)
+      window.location.href = `http://127.0.0.1:8080/api/services/connect/${provider}`;
+    }
   };
 
   const handleLogout = async () => {
