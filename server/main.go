@@ -7,6 +7,7 @@ import (
 	"server/internal/auth"
 	"server/internal/database"
 	"server/internal/handlers"
+	"server/internal/middleware"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -35,24 +36,30 @@ func main() {
 	// API routes
 	api := r.Group("/api")
 	{
-		// Auth routes
+		// Public auth routes
 		authGroup := api.Group("/auth")
 		{
 			authGroup.GET("/google", handlers.HandleGoogleLogin)
 			authGroup.GET("/google/callback", handlers.HandleGoogleCallback)
 			authGroup.POST("/logout", handlers.HandleLogout)
-			authGroup.GET("/me", handlers.HandleGetCurrentUser)
 		}
 
-		// Service connection routes
-		servicesGroup := api.Group("/services")
+		// Protected routes (require JWT)
+		protected := api.Group("")
+		protected.Use(middleware.AuthMiddleware())
 		{
-			servicesGroup.GET("/connect/:provider", handlers.HandleConnectService)
-			servicesGroup.GET("/callback/:provider", handlers.HandleServiceCallback)
-			servicesGroup.GET("", handlers.HandleGetConnectedServices)
+			protected.GET("/auth/me", handlers.HandleGetCurrentUser)
+
+			// Service connection routes
+			servicesGroup := protected.Group("/services")
+			{
+				servicesGroup.GET("/connect/:provider", handlers.HandleConnectService)
+				servicesGroup.GET("/callback/:provider", handlers.HandleServiceCallback)
+				servicesGroup.GET("", handlers.HandleGetConnectedServices)
+			}
 		}
 
-		// Health check
+		// Health check (public)
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "ok"})
 		})

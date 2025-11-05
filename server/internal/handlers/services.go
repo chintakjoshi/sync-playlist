@@ -7,9 +7,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"server/internal/auth"
 	"server/internal/database"
+	"server/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -24,19 +26,25 @@ func HandleConnectService(c *gin.Context) {
 		return
 	}
 
-	// For now, we'll use a placeholder user ID. In a real implementation,
-	// you'd get this from JWT middleware
-	state := "temp-user-id" // This should be a proper state token with user ID
+	// Get user from context
+	user, exists := middleware.GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// Use user ID in state for security
+	state := fmt.Sprintf("user-%d", user.ID)
 
 	url := config.AuthCodeURL(state)
-	log.Printf("Redirecting to %s OAuth: %s", provider, url)
+	log.Printf("Redirecting user %d to %s OAuth: %s", user.ID, provider, url)
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
 func HandleServiceCallback(c *gin.Context) {
 	provider := c.Param("provider")
 	code := c.Query("code")
-	c.Query("state")
+	state := c.Query("state")
 	error := c.Query("error")
 
 	if error != "" {
@@ -110,14 +118,19 @@ func HandleServiceCallback(c *gin.Context) {
 		}
 	}
 
-	// TODO: In a real implementation, you would:
-	// 1. Validate the state parameter (should contain user ID)
-	// 2. Get the actual user ID from JWT or state
-	// 3. Store the token in database associated with the user
+	// Extract user ID from state parameter for security
+	// In a production app, you'd want to use a proper state token with signature verification
+	var userID uint = 1 // Default fallback
 
-	// For now, we'll store with a placeholder user ID (user ID 1)
+	// Simple state parsing: "user-{id}"
+	if len(state) > 5 && state[:5] == "user-" {
+		if id, err := strconv.ParseUint(state[5:], 10, 32); err == nil {
+			userID = uint(id)
+		}
+	}
+
 	userService := database.UserService{
-		UserID:          1, // Placeholder - replace with actual user ID from JWT
+		UserID:          userID,
 		ServiceType:     provider,
 		AccessToken:     token.AccessToken,
 		RefreshToken:    token.RefreshToken,
@@ -160,20 +173,23 @@ func HandleServiceCallback(c *gin.Context) {
 }
 
 func HandleGetConnectedServices(c *gin.Context) {
-	// TODO: Get user ID from JWT and fetch their connected services
-	// For now, get all services (we'll filter by user later)
+	// Get user from context
+	user, exists := middleware.GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// Get services for the authenticated user only
 	var services []database.UserService
-	result := database.DB.Find(&services)
+	result := database.DB.Where("user_id = ?", user.ID).Find(&services)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch services"})
 		return
 	}
 
-	// Log the services for debugging
-	log.Printf("Returning %d services to frontend", len(services))
-	for _, service := range services {
-		log.Printf("Service: %s, User: %s", service.ServiceType, service.ServiceUserName)
-	}
+	// Log for debugging
+	log.Printf("Returning %d services for user %d", len(services), user.ID)
 
 	c.JSON(http.StatusOK, gin.H{"services": services})
 }

@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"server/internal/auth"
 	"server/internal/database"
+	"server/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -129,37 +129,9 @@ func HandleLogout(c *gin.Context) {
 }
 
 func HandleGetCurrentUser(c *gin.Context) {
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
-		return
-	}
-
-	// Extract token from "Bearer <token>"
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || parts[0] != "Bearer" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header format must be Bearer {token}"})
-		return
-	}
-
-	tokenString := parts[1]
-
-	// Parse and validate token
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte(os.Getenv("JWT_SECRET")), nil
-	})
-
-	if err != nil || !token.Valid {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
-		return
-	}
-
-	// Get user from database
-	var user database.User
-	result := database.DB.First(&user, claims.UserID)
-	if result.Error != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+	user, exists := middleware.GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found in context"})
 		return
 	}
 

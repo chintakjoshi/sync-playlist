@@ -31,7 +31,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     checkAuth();
-    
+
     // Check for success messages from OAuth redirects
     const messageParam = searchParams.get('message');
     if (messageParam) {
@@ -44,7 +44,7 @@ export default function Dashboard() {
         // Refresh services list
         fetchConnectedServices();
       }
-      
+
       // Clear the message after 5 seconds
       setTimeout(() => setMessage(''), 5000);
     }
@@ -54,7 +54,7 @@ export default function Dashboard() {
     try {
       const token = localStorage.getItem('token');
       console.log('Dashboard token check:', token);
-      
+
       if (!token) {
         console.log('No token, redirecting to home');
         router.push('/');
@@ -66,7 +66,7 @@ export default function Dashboard() {
       });
       setUser(response.data.user);
       console.log('User data:', response.data.user);
-      
+
       // Fetch connected services after auth check
       fetchConnectedServices();
     } catch (error) {
@@ -87,8 +87,13 @@ export default function Dashboard() {
       });
       console.log('Connected services response:', response.data);
       setConnectedServices(response.data.services);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch connected services:', error);
+      if (error.response?.status === 401) {
+        // Token is invalid, redirect to login
+        localStorage.removeItem('token');
+        router.push('/');
+      }
     } finally {
       setServicesLoading(false);
     }
@@ -179,16 +184,15 @@ export default function Dashboard() {
           {/* Service Connection Cards */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">Connect Services</h2>
-            
+
             <div className="space-y-4">
               <button
                 onClick={() => handleConnectService('spotify')}
                 disabled={isServiceConnected('spotify')}
-                className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${
-                  isServiceConnected('spotify') 
-                    ? 'bg-green-500 text-white opacity-50 cursor-not-allowed' 
+                className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${isServiceConnected('spotify')
+                    ? 'bg-green-500 text-white opacity-50 cursor-not-allowed'
                     : 'bg-green-600 text-white hover:bg-green-700'
-                }`}
+                  }`}
               >
                 <span>
                   {isServiceConnected('spotify') ? 'Spotify Connected' : 'Connect Spotify'}
@@ -198,11 +202,10 @@ export default function Dashboard() {
               <button
                 onClick={() => handleConnectService('youtube')}
                 disabled={isServiceConnected('youtube')}
-                className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${
-                  isServiceConnected('youtube') 
-                    ? 'bg-red-500 text-white opacity-50 cursor-not-allowed' 
+                className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${isServiceConnected('youtube')
+                    ? 'bg-red-500 text-white opacity-50 cursor-not-allowed'
                     : 'bg-red-600 text-white hover:bg-red-700'
-                }`}
+                  }`}
               >
                 <span>
                   {isServiceConnected('youtube') ? 'YouTube Music Connected' : 'Connect YouTube Music'}
@@ -219,14 +222,13 @@ export default function Dashboard() {
             </p>
             <button
               disabled={connectedServices.length < 2}
-              className={`w-full py-3 px-4 rounded-md ${
-                connectedServices.length < 2
+              className={`w-full py-3 px-4 rounded-md ${connectedServices.length < 2
                   ? 'bg-blue-400 text-white opacity-50 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
+                }`}
             >
-              {connectedServices.length < 2 
-                ? 'Connect at least 2 services' 
+              {connectedServices.length < 2
+                ? 'Connect at least 2 services'
                 : 'Transfer Playlist (Coming Soon)'
               }
             </button>
@@ -256,7 +258,7 @@ export default function Dashboard() {
                     )}
                   </div>
                 ))}
-                
+
                 {connectedServices.length === 0 && (
                   <p className="text-gray-500 text-center py-4">No services connected yet</p>
                 )}
@@ -270,10 +272,10 @@ export default function Dashboard() {
           <h3 className="text-lg font-semibold text-yellow-800 mb-2">Debug Info</h3>
           <div className="text-sm text-yellow-700">
             <p>Number of connected services: {connectedServices.length}</p>
-            <p>Services: {JSON.stringify(connectedServices.map(s => ({ 
-              id: s.id, 
-              service_type: s.service_type, 
-              service_user_name: s.service_user_name 
+            <p>Services: {JSON.stringify(connectedServices.map(s => ({
+              id: s.id,
+              service_type: s.service_type,
+              service_user_name: s.service_user_name
             })))}</p>
             <p>Is Spotify connected: {isServiceConnected('spotify') ? 'Yes' : 'No'}</p>
             <p>Is YouTube connected: {isServiceConnected('youtube') ? 'Yes' : 'No'}</p>
