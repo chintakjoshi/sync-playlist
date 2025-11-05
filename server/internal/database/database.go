@@ -22,13 +22,13 @@ type User struct {
 
 type UserService struct {
 	gorm.Model
-	UserID          uint   `gorm:"not null"`
-	ServiceType     string `gorm:"not null"` // "spotify", "youtube"
-	AccessToken     string
-	RefreshToken    string
-	TokenExpiry     int64
-	ServiceUserID   string // User ID from the service
-	ServiceUserName string
+	UserID          uint   `gorm:"not null" json:"user_id"`
+	ServiceType     string `gorm:"not null" json:"service_type"` // "spotify", "youtube"
+	AccessToken     string `json:"access_token"`
+	RefreshToken    string `json:"refresh_token"`
+	TokenExpiry     int64  `json:"token_expiry"`
+	ServiceUserID   string `json:"service_user_id"`
+	ServiceUserName string `json:"service_user_name"`
 }
 
 func InitDB() error {

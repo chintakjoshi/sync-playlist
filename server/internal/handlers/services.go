@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"server/internal/database"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func HandleConnectService(c *gin.Context) {
@@ -70,7 +72,9 @@ func HandleServiceCallback(c *gin.Context) {
 
 	log.Printf("Successfully obtained %s token", provider)
 
-	// For Spotify, let's get the user's profile to verify the connection
+	var serviceUserID, serviceUserName string
+
+	// Get user info from the service
 	if provider == "spotify" {
 		client := config.Client(context.Background(), token)
 		resp, err := client.Get("https://api.spotify.com/v1/me")
@@ -87,17 +91,69 @@ func HandleServiceCallback(c *gin.Context) {
 			return
 		}
 
-		// Parse Spotify user info (simplified)
-		// TODO: Parse the response body properly
-		log.Printf("Successfully connected to Spotify for user")
+		// Parse Spotify user info
+		var spotifyUser struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"display_name"`
+			Email       string `json:"email"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&spotifyUser); err != nil {
+			log.Printf("Failed to parse Spotify user info: %v", err)
+		} else {
+			serviceUserID = spotifyUser.ID
+			serviceUserName = spotifyUser.DisplayName
+			if serviceUserName == "" && spotifyUser.Email != "" {
+				serviceUserName = spotifyUser.Email
+			}
+			log.Printf("Spotify user: %s (%s)", serviceUserName, serviceUserID)
+		}
 	}
 
 	// TODO: In a real implementation, you would:
 	// 1. Validate the state parameter (should contain user ID)
-	// 2. Get user info from the service using the access token
+	// 2. Get the actual user ID from JWT or state
 	// 3. Store the token in database associated with the user
 
-	// For now, redirect to frontend with success message
+	// For now, we'll store with a placeholder user ID (user ID 1)
+	userService := database.UserService{
+		UserID:          1, // Placeholder - replace with actual user ID from JWT
+		ServiceType:     provider,
+		AccessToken:     token.AccessToken,
+		RefreshToken:    token.RefreshToken,
+		TokenExpiry:     token.Expiry.Unix(),
+		ServiceUserID:   serviceUserID,
+		ServiceUserName: serviceUserName,
+	}
+
+	// Check if service already exists for this user
+	var existingService database.UserService
+	result := database.DB.Where("user_id = ? AND service_type = ?", userService.UserID, provider).First(&existingService)
+
+	switch result.Error {
+	case gorm.ErrRecordNotFound:
+		// Create new service connection
+		if err := database.DB.Create(&userService).Error; err != nil {
+			log.Printf("Failed to create service connection: %v", err)
+		} else {
+			log.Printf("Created new %s service connection for user %d", provider, userService.UserID)
+		}
+	case nil:
+		// Update existing service connection
+		existingService.AccessToken = userService.AccessToken
+		existingService.RefreshToken = userService.RefreshToken
+		existingService.TokenExpiry = userService.TokenExpiry
+		existingService.ServiceUserID = userService.ServiceUserID
+		existingService.ServiceUserName = userService.ServiceUserName
+
+		if err := database.DB.Save(&existingService).Error; err != nil {
+			log.Printf("Failed to update service connection: %v", err)
+		} else {
+			log.Printf("Updated %s service connection for user %d", provider, userService.UserID)
+		}
+	}
+
+	// Redirect to frontend with success message
 	frontendURL := os.Getenv("FRONTEND_URL")
 	redirectURL := fmt.Sprintf("%s/dashboard?message=%s_connected", frontendURL, provider)
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
@@ -105,11 +161,18 @@ func HandleServiceCallback(c *gin.Context) {
 
 func HandleGetConnectedServices(c *gin.Context) {
 	// TODO: Get user ID from JWT and fetch their connected services
+	// For now, get all services (we'll filter by user later)
 	var services []database.UserService
 	result := database.DB.Find(&services)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch services"})
 		return
+	}
+
+	// Log the services for debugging
+	log.Printf("Returning %d services to frontend", len(services))
+	for _, service := range services {
+		log.Printf("Service: %s, User: %s", service.ServiceType, service.ServiceUserName)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"services": services})
