@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"server/internal/auth"
@@ -27,6 +30,8 @@ func GenerateJWT(userID uint) (string, error) {
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Subject:   strconv.FormatUint(uint64(userID), 10),
 		},
 	}
 
@@ -50,6 +55,7 @@ func HandleGoogleCallback(c *gin.Context) {
 	// Exchange code for token
 	token, err := auth.GoogleOAuthConfig.Exchange(context.Background(), code)
 	if err != nil {
+		log.Printf("Token exchange error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to exchange token: " + err.Error()})
 		return
 	}
@@ -58,6 +64,7 @@ func HandleGoogleCallback(c *gin.Context) {
 	client := auth.GoogleOAuthConfig.Client(context.Background(), token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
+		log.Printf("User info fetch error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to get user info: " + err.Error()})
 		return
 	}
@@ -72,6 +79,7 @@ func HandleGoogleCallback(c *gin.Context) {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		log.Printf("User info decode error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to parse user info: " + err.Error()})
 		return
 	}
@@ -87,24 +95,32 @@ func HandleGoogleCallback(c *gin.Context) {
 			AvatarURL: userInfo.Picture,
 		}
 		if err := database.DB.Create(&user).Error; err != nil {
+			log.Printf("User creation error: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
 			return
 		}
+		log.Printf("Created new user: %s", user.Email)
 	} else if result.Error != nil {
+		log.Printf("Database error: %v", result.Error)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error: " + result.Error.Error()})
 		return
+	} else {
+		log.Printf("Logged in existing user: %s", user.Email)
 	}
 
 	// Generate JWT
 	jwtToken, err := GenerateJWT(user.ID)
 	if err != nil {
+		log.Printf("JWT generation error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token: " + err.Error()})
 		return
 	}
 
 	// Redirect to frontend with token
 	frontendURL := os.Getenv("FRONTEND_URL")
-	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/auth/success?token=%s", frontendURL, jwtToken))
+	redirectURL := fmt.Sprintf("%s/auth/success?token=%s", frontendURL, jwtToken)
+	log.Printf("Redirecting to: %s", redirectURL)
+	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
 func HandleLogout(c *gin.Context) {
@@ -113,11 +129,46 @@ func HandleLogout(c *gin.Context) {
 }
 
 func HandleGetCurrentUser(c *gin.Context) {
-	// TODO: Implement JWT middleware to extract user from token
-	// For now, return a placeholder
-	c.JSON(http.StatusOK, gin.H{"user": map[string]interface{}{
-		"id":    1,
-		"email": "user@example.com",
-		"name":  "Test User",
-	}})
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+		return
+	}
+
+	// Extract token from "Bearer <token>"
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header format must be Bearer {token}"})
+		return
+	}
+
+	tokenString := parts[1]
+
+	// Parse and validate token
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
+
+	// Get user from database
+	var user database.User
+	result := database.DB.First(&user, claims.UserID)
+	if result.Error != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user": map[string]interface{}{
+			"id":        user.ID,
+			"email":     user.Email,
+			"name":      user.Name,
+			"avatarURL": user.AvatarURL,
+		},
+	})
 }

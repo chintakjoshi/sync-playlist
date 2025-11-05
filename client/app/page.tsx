@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useRouter } from 'next/navigation';
 
 interface User {
   id: number;
   email: string;
   name: string;
+  avatarURL?: string;
 }
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     checkAuth();
@@ -40,7 +43,12 @@ export default function Home() {
 
   const handleLogout = async () => {
     try {
-      await axios.post('http://localhost:8080/api/auth/logout');
+      const token = localStorage.getItem('token');
+      if (token) {
+        await axios.post('http://localhost:8080/api/auth/logout', {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      }
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
@@ -50,7 +58,11 @@ export default function Home() {
   };
 
   if (loading) {
-    return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
   }
 
   return (
@@ -59,13 +71,13 @@ export default function Home() {
         <h1 className="text-3xl font-bold text-center text-gray-900 mb-8">
           Playlist Tracker
         </h1>
-        
+
         {user ? (
           <div className="text-center">
             <p className="text-lg mb-4">Welcome, {user.name}!</p>
             <div className="space-y-4">
               <button
-                onClick={() => window.location.href = '/dashboard'}
+                onClick={() => router.push('/dashboard')}
                 className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
               >
                 Go to Dashboard
@@ -80,7 +92,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="text-center">
-            <p className="text-lg mb-6">Transfer playlists between music services</p>
+            <p className="text-lg text-black mb-6">Transfer playlists between music services</p>
             <button
               onClick={handleGoogleLogin}
               className="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 flex items-center justify-center"

@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	// Initialize database - we don't need to assign to a variable since it sets a global DB
+	// Initialize database
 	if err := database.InitDB(); err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
@@ -26,7 +26,7 @@ func main() {
 
 	// CORS configuration for local development
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://client:3000"}, // Updated to client
+		AllowOrigins:     []string{"http://localhost:3000", "http://client:3000"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,

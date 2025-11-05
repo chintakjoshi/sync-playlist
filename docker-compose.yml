@@ -32,7 +32,7 @@ services:
       - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID}
       - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET}
       - FRONTEND_URL=http://localhost:3000
-      - BACKEND_URL=http://localhost:8080
+      - BACKEND_URL=http://127.0.0.1:8080
     depends_on:
       - postgres
     networks:
