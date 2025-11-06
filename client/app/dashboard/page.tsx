@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Playlists from '../components/Playlists';
+import TransferModal from '../components/TransferModal';
+import TransferHistory from '../components/TransferHistory';
 import axios from 'axios';
 
 interface User {
@@ -10,6 +12,16 @@ interface User {
   email: string;
   name: string;
   avatarURL?: string;
+}
+
+interface Playlist {
+  id: string;
+  name: string;
+  service_type: string;
+  service_id: string;
+  description: string;
+  track_count: number;
+  image_url: string;
 }
 
 interface ConnectedService {
@@ -27,6 +39,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [message, setMessage] = useState<string>('');
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [allPlaylists, setAllPlaylists] = useState<Playlist[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -50,6 +64,48 @@ export default function Dashboard() {
       setTimeout(() => setMessage(''), 5000);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const fetchAllPlaylists = async () => {
+      const token = localStorage.getItem('token');
+      const playlists: Playlist[] = [];
+
+      for (const service of ['spotify', 'youtube']) {
+        if (isServiceConnected(service)) {
+          try {
+            const response = await axios.get(`http://localhost:8080/api/playlists/${service}/stored`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            playlists.push(...response.data.playlists.map((p: any) => ({
+              ...p,
+              service_type: service
+            })));
+          } catch (error) {
+            console.error(`Failed to fetch ${service} playlists:`, error);
+          }
+        }
+      }
+
+      setAllPlaylists(playlists);
+    };
+
+    if (connectedServices.length > 0) {
+      fetchAllPlaylists();
+    }
+  }, [connectedServices]);
+
+  const testTrackSearch = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('http://localhost:8080/api/debug/search?service=spotify&track=Blinding%20Lights&artist=The%20Weeknd', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      console.log('Track search test:', response.data);
+      alert(`Track search result: ${JSON.stringify(response.data)}`);
+    } catch (error) {
+      console.error('Track search test failed:', error);
+    }
+  };
 
   const checkAuth = async () => {
     try {
@@ -205,7 +261,7 @@ export default function Dashboard() {
           <div className="space-y-6">
             {/* Service Connection Cards */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">Connect Services</h2>
+              <h2 className="text-xl font-semibold mb-4 text-black">Connect Services</h2>
 
               <div className="space-y-4">
                 <button
@@ -238,11 +294,12 @@ export default function Dashboard() {
 
             {/* Playlist Transfer */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">Transfer Playlists</h2>
+              <h2 className="text-xl font-semibold mb-4 text-black">Transfer Playlists</h2>
               <p className="text-gray-600 mb-4">
                 Select playlists to transfer between services.
               </p>
               <button
+                onClick={() => setShowTransferModal(true)}
                 disabled={connectedServices.length < 2}
                 className={`w-full py-3 px-4 rounded-md ${connectedServices.length < 2
                     ? 'bg-blue-400 text-white opacity-50 cursor-not-allowed'
@@ -251,20 +308,20 @@ export default function Dashboard() {
               >
                 {connectedServices.length < 2
                   ? 'Connect at least 2 services'
-                  : 'Select Playlists to Transfer'
+                  : 'Transfer Playlist'
                 }
               </button>
             </div>
 
             {/* Connected Services */}
             <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold mb-4">Connected Services</h2>
+              <h2 className="text-xl font-semibold mb-4 text-black">Connected Services</h2>
               {servicesLoading ? (
                 <div className="flex justify-center">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 text-black">
                   {['spotify', 'youtube'].map((service) => (
                     <div key={service} className="flex items-center justify-between p-3 bg-gray-50 rounded">
                       <div>
@@ -309,6 +366,18 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+      <button onClick={testTrackSearch} className="bg-purple-600 text-white px-4 py-2 rounded">
+        Test Track Search
+      </button>
+      <TransferModal
+        isOpen={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+        playlists={allPlaylists}
+        connectedServices={connectedServices.map(s => s.service_type)}
+      />
+      <div className="mt-8">
+        <TransferHistory />
+      </div>
     </div>
   );
 }
