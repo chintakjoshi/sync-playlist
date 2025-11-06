@@ -309,7 +309,11 @@ func fetchPlaylistTracks(serviceType, accessToken, playlistID string) ([]Track, 
 // fetchSpotifyPlaylistTracks gets tracks from a Spotify playlist
 func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string, error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.spotify.com/v1/playlists/%s/tracks", playlistID), nil)
+
+	// Simple request without fields filter
+	url := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s", playlistID)
+
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -323,7 +327,7 @@ func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("Spotify playlist tracks API error: %d, body: %s", resp.StatusCode, string(body))
+		log.Printf("Spotify playlist API error: %d, body: %s", resp.StatusCode, string(body))
 		return nil, "", fmt.Errorf("spotify API returned status: %d", resp.StatusCode)
 	}
 
@@ -340,10 +344,6 @@ func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string
 					Album struct {
 						Name string `json:"name"`
 					} `json:"album"`
-					DurationMS  int `json:"duration_ms"`
-					ExternalIDs struct {
-						ISRC string `json:"isrc"`
-					} `json:"external_ids"`
 				} `json:"track"`
 			} `json:"items"`
 		} `json:"tracks"`
@@ -353,6 +353,8 @@ func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string
 		return nil, "", err
 	}
 
+	log.Printf("Spotify playlist '%s' has %d tracks", spotifyResponse.Name, len(spotifyResponse.Tracks.Items))
+
 	var tracks []Track
 	for _, item := range spotifyResponse.Tracks.Items {
 		artist := ""
@@ -361,12 +363,10 @@ func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string
 		}
 
 		tracks = append(tracks, Track{
-			ID:       item.Track.ID,
-			Name:     item.Track.Name,
-			Artist:   artist,
-			Album:    item.Track.Album.Name,
-			Duration: item.Track.DurationMS,
-			ISRC:     item.Track.ExternalIDs.ISRC,
+			ID:     item.Track.ID,
+			Name:   item.Track.Name,
+			Artist: artist,
+			Album:  item.Track.Album.Name,
 		})
 	}
 
@@ -1040,5 +1040,56 @@ func TestSpotifyConnection(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Spotify connection is working",
 		"user_id": spotifyService.ServiceUserID,
+	})
+}
+func DebugSpotifyPlaylist(c *gin.Context) {
+	user, exists := middleware.GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	playlistID := c.Query("playlist_id")
+	if playlistID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "playlist_id parameter required"})
+		return
+	}
+
+	// Get Spotify service connection
+	var spotifyService database.UserService
+	if err := database.DB.Where("user_id = ? AND service_type = ?", user.ID, "spotify").First(&spotifyService).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spotify not connected"})
+		return
+	}
+
+	// Test playlist access
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.spotify.com/v1/playlists/%s", playlistID), nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+
+	req.Header.Set("Authorization", "Bearer "+spotifyService.AccessToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Request failed: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Spotify API returned status: %d", resp.StatusCode),
+			"body":  string(body),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "Playlist access successful",
+		"playlist_info": string(body),
 	})
 }

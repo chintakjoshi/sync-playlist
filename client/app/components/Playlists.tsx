@@ -20,7 +20,7 @@ interface PlaylistsProps {
 }
 
 export default function Playlists({ service, isConnected }: PlaylistsProps) {
-    const [playlists, setPlaylists] = useState<Playlist[]>([]);
+    const [playlists, setPlaylists] = useState<Playlist[]>([]); // Always an array
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string>('');
 
@@ -34,10 +34,12 @@ export default function Playlists({ service, isConnected }: PlaylistsProps) {
             const response = await axios.get(`http://localhost:8080/api/playlists/${service}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setPlaylists(response.data.playlists);
+            // Ensure we always set an array, even if response is null/undefined
+            setPlaylists(Array.isArray(response.data?.playlists) ? response.data.playlists : []);
         } catch (err: any) {
             console.error(`Failed to fetch ${service} playlists:`, err);
             setError(err.response?.data?.error || 'Failed to fetch playlists');
+            setPlaylists([]); // Reset to empty array on error
         } finally {
             setLoading(false);
         }
@@ -54,6 +56,8 @@ export default function Playlists({ service, isConnected }: PlaylistsProps) {
     useEffect(() => {
         if (isConnected) {
             fetchPlaylists();
+        } else {
+            setPlaylists([]); // Clear playlists when not connected
         }
     }, [service, isConnected]);
 
@@ -129,8 +133,8 @@ export default function Playlists({ service, isConnected }: PlaylistsProps) {
                                     <div className="flex items-center mt-2">
                                         <span
                                             className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${playlist.is_public
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : 'bg-gray-100 text-gray-800'
+                                                ? 'bg-green-100 text-green-800'
+                                                : 'bg-gray-100 text-gray-800'
                                                 }`}
                                         >
                                             {playlist.is_public ? 'Public' : 'Private'}

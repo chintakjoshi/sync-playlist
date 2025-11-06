@@ -62,6 +62,7 @@ func main() {
 			protected.GET("/debug/playlist", handlers.TestPlaylistFetch)
 			protected.GET("/debug/spotify-connection", handlers.DebugSpotifySearch)
 			protected.GET("/debug/spotify-test", handlers.TestSpotifyConnection)
+			protected.GET("/debug/spotify-playlist", handlers.DebugSpotifyPlaylist)
 
 			// Playlists routes
 			playlistsGroup := protected.Group("/playlists")

@@ -101,8 +101,14 @@ export default function TransferHistory() {
         if (!dateString) return 'Unknown date';
 
         try {
+            // Handle both ISO string and other formats
             const date = new Date(dateString);
             if (isNaN(date.getTime())) {
+                // Try parsing as Unix timestamp if it's a number
+                const timestamp = parseInt(dateString);
+                if (!isNaN(timestamp)) {
+                    return new Date(timestamp * 1000).toLocaleString();
+                }
                 return 'Invalid date';
             }
             return date.toLocaleString();
@@ -153,7 +159,7 @@ export default function TransferHistory() {
                             key={transfer.id}
                             className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
                             onClick={() => {
-                                console.log("Clicked transfer ID:", transfer.id);
+                                console.log("Clicked transfer with ID:", transfer.id, "Type:", typeof transfer.id);
                                 fetchTransferDetails(transfer.id);
                             }}
                         >

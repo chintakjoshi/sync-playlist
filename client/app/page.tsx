@@ -74,7 +74,7 @@ export default function Home() {
 
         {user ? (
           <div className="text-center">
-            <p className="text-lg mb-4">Welcome, {user.name}!</p>
+            <p className="text-lg mb-4 text-black">Welcome, {user.name}!</p>
             <div className="space-y-4">
               <button
                 onClick={() => router.push('/dashboard')}
