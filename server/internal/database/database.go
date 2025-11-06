@@ -57,6 +57,35 @@ type PlaylistTrack struct {
 	ThumbnailURL string `json:"thumbnail_url"`
 }
 
+type Transfer struct {
+	gorm.Model
+	UserID             uint   `gorm:"not null" json:"user_id"`
+	SourceService      string `gorm:"not null" json:"source_service"`
+	SourcePlaylistID   string `gorm:"not null" json:"source_playlist_id"`
+	SourcePlaylistName string `json:"source_playlist_name"`
+	TargetService      string `gorm:"not null" json:"target_service"`
+	TargetPlaylistID   string `json:"target_playlist_id"`
+	TargetPlaylistName string `json:"target_playlist_name"`
+	Status             string `gorm:"not null" json:"status"` // "pending", "processing", "completed", "completed_with_errors", "failed"
+	TracksTotal        int    `json:"tracks_total"`
+	TracksMatched      int    `json:"tracks_matched"`
+	TracksFailed       int    `json:"tracks_failed"`
+	ErrorMessage       string `json:"error_message"`
+}
+
+type TransferTrack struct {
+	gorm.Model
+	TransferID      uint    `gorm:"not null" json:"transfer_id"`
+	SourceTrackID   string  `json:"source_track_id"`
+	SourceTrackName string  `json:"source_track_name"`
+	SourceArtist    string  `json:"source_artist"`
+	TargetTrackID   string  `json:"target_track_id"`
+	TargetTrackName string  `json:"target_track_name"`
+	TargetArtist    string  `json:"target_artist"`
+	Status          string  `json:"status"`           // "matched", "not_found", "error"
+	MatchConfidence float64 `json:"match_confidence"` // 0.0 to 1.0
+}
+
 func InitDB() error {
 	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
@@ -73,7 +102,7 @@ func InitDB() error {
 	}
 
 	// Auto migrate tables
-	err = db.AutoMigrate(&User{}, &UserService{}, &Playlist{}, &PlaylistTrack{})
+	err = db.AutoMigrate(&User{}, &UserService{}, &Playlist{}, &PlaylistTrack{}, &Transfer{}, &TransferTrack{})
 	if err != nil {
 		return err
 	}
