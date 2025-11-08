@@ -94,18 +94,6 @@ export default function Dashboard() {
     }
   }, [connectedServices]);
 
-  const testTrackSearch = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:8080/api/debug/search?service=spotify&track=Blinding%20Lights&artist=The%20Weeknd', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      alert(`Track search result: ${JSON.stringify(response.data)}`);
-    } catch (error) {
-      console.error('Track search test failed:', error);
-    }
-  };
-
   const checkAuth = async () => {
     try {
       const token = localStorage.getItem('token');
