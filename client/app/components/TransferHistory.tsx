@@ -203,8 +203,8 @@ export default function TransferHistory() {
                                                     <div
                                                         key={track.id || `track-${index}`} // Fallback to index if id is missing
                                                         className={`flex justify-between items-center py-2 px-3 rounded ${track.status === 'matched' ? 'bg-green-50 border border-green-200' :
-                                                                track.status === 'not_found' ? 'bg-red-50 border border-red-200' :
-                                                                    'bg-yellow-50 border border-yellow-200'
+                                                            track.status === 'not_found' ? 'bg-red-50 border border-red-200' :
+                                                                'bg-yellow-50 border border-yellow-200'
                                                             }`}
                                                     >
                                                         <div className="flex-1 min-w-0">

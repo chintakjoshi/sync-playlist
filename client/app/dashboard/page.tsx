@@ -110,7 +110,6 @@ export default function Dashboard() {
   const checkAuth = async () => {
     try {
       const token = localStorage.getItem('token');
-      console.log('Dashboard token check:', token);
 
       if (!token) {
         console.log('No token, redirecting to home');
@@ -122,7 +121,6 @@ export default function Dashboard() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUser(response.data.user);
-      console.log('User data:', response.data.user);
 
       // Fetch connected services after auth check
       fetchConnectedServices();
@@ -142,7 +140,6 @@ export default function Dashboard() {
       const response = await axios.get('http://localhost:8080/api/services', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('Connected services response:', response.data);
       setConnectedServices(response.data.services);
     } catch (error: any) {
       console.error('Failed to fetch connected services:', error);
@@ -268,8 +265,8 @@ export default function Dashboard() {
                   onClick={() => handleConnectService('spotify')}
                   disabled={isServiceConnected('spotify')}
                   className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${isServiceConnected('spotify')
-                      ? 'bg-green-500 text-white opacity-50 cursor-not-allowed'
-                      : 'bg-green-600 text-white hover:bg-green-700'
+                    ? 'bg-green-500 text-white opacity-50 cursor-not-allowed'
+                    : 'bg-green-600 text-white hover:bg-green-700'
                     }`}
                 >
                   <span>
@@ -281,8 +278,8 @@ export default function Dashboard() {
                   onClick={() => handleConnectService('youtube')}
                   disabled={isServiceConnected('youtube')}
                   className={`w-full py-3 px-4 rounded-md flex items-center justify-center ${isServiceConnected('youtube')
-                      ? 'bg-red-500 text-white opacity-50 cursor-not-allowed'
-                      : 'bg-red-600 text-white hover:bg-red-700'
+                    ? 'bg-red-500 text-white opacity-50 cursor-not-allowed'
+                    : 'bg-red-600 text-white hover:bg-red-700'
                     }`}
                 >
                   <span>
@@ -302,8 +299,8 @@ export default function Dashboard() {
                 onClick={() => setShowTransferModal(true)}
                 disabled={connectedServices.length < 2}
                 className={`w-full py-3 px-4 rounded-md ${connectedServices.length < 2
-                    ? 'bg-blue-400 text-white opacity-50 cursor-not-allowed'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                  ? 'bg-blue-400 text-white opacity-50 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
               >
                 {connectedServices.length < 2
@@ -352,23 +349,7 @@ export default function Dashboard() {
             <Playlists service="youtube" isConnected={isServiceConnected('youtube')} />
           </div>
         </div>
-
-        {/* Debug Section - Remove in production */}
-        <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h3 className="text-lg font-semibold text-yellow-800 mb-2">Debug Info</h3>
-          <div className="text-sm text-yellow-700">
-            <p>Number of connected services: {connectedServices.length}</p>
-            <p>Services: {JSON.stringify(connectedServices.map(s => ({
-              id: s.id,
-              service_type: s.service_type,
-              service_user_name: s.service_user_name
-            })))}</p>
-          </div>
-        </div>
       </main>
-      <button onClick={testTrackSearch} className="bg-purple-600 text-white px-4 py-2 rounded">
-        Test Track Search
-      </button>
       <TransferModal
         isOpen={showTransferModal}
         onClose={() => setShowTransferModal(false)}
