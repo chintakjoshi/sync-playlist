@@ -54,7 +54,6 @@ export default function TransferHistory() {
     };
 
     const fetchTransferDetails = async (transferId: number) => {
-        console.log("Fetching transfer details for ID:", transferId);
 
         try {
             setError('');
@@ -62,12 +61,10 @@ export default function TransferHistory() {
             const response = await axios.get(`http://localhost:8080/api/transfers/${transferId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            console.log("Transfer details response:", response.data);
             setTransferTracks(response.data.tracks || []);
             setSelectedTransfer(response.data.transfer);
         } catch (error: any) {
             console.error('Failed to fetch transfer details:', error);
-            console.log('Error response:', error.response);
             if (error.response?.status === 404) {
                 setError('Transfer not found. It might have been deleted.');
             } else {
@@ -159,7 +156,6 @@ export default function TransferHistory() {
                             key={transfer.id}
                             className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
                             onClick={() => {
-                                console.log("Clicked transfer with ID:", transfer.id, "Type:", typeof transfer.id);
                                 fetchTransferDetails(transfer.id);
                             }}
                         >

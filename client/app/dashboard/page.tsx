@@ -100,7 +100,6 @@ export default function Dashboard() {
       const response = await axios.get('http://localhost:8080/api/debug/search?service=spotify&track=Blinding%20Lights&artist=The%20Weeknd', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      console.log('Track search test:', response.data);
       alert(`Track search result: ${JSON.stringify(response.data)}`);
     } catch (error) {
       console.error('Track search test failed:', error);
@@ -112,7 +111,6 @@ export default function Dashboard() {
       const token = localStorage.getItem('token');
 
       if (!token) {
-        console.log('No token, redirecting to home');
         router.push('/');
         return;
       }
