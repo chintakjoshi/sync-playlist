@@ -15,29 +15,64 @@ interface Playlist {
 interface TransferModalProps {
     isOpen: boolean;
     onClose: () => void;
-    playlists: Playlist[];
     connectedServices: string[];
 }
 
-export default function TransferModal({ isOpen, onClose, playlists, connectedServices }: TransferModalProps) {
+export default function TransferModal({ isOpen, onClose, connectedServices }: TransferModalProps) {
     const [sourceService, setSourceService] = useState('');
     const [targetService, setTargetService] = useState('');
     const [sourcePlaylist, setSourcePlaylist] = useState('');
     const [targetPlaylistName, setTargetPlaylistName] = useState('');
+    const [playlists, setPlaylists] = useState<Playlist[]>([]);
     const [loading, setLoading] = useState(false);
+    const [playlistsLoading, setPlaylistsLoading] = useState(false);
     const [error, setError] = useState('');
 
     useEffect(() => {
+        const fetchPlaylistsForService = async () => {
+            if (!sourceService || !isOpen) {
+                setPlaylists([]);
+                return;
+            }
+
+            try {
+                setPlaylistsLoading(true);
+                setError('');
+                const token = localStorage.getItem('token');
+                const response = await axios.get(`http://localhost:8080/api/playlists/${sourceService}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setPlaylists(response.data.playlists || []);
+            } catch (err: any) {
+                console.error(`Failed to fetch ${sourceService} playlists:`, err);
+                setPlaylists([]);
+            } finally {
+                setPlaylistsLoading(false);
+            }
+        };
+
+        fetchPlaylistsForService();
+    }, [sourceService, isOpen]);
+
+    useEffect(() => {
         if (isOpen) {
-            // Set default services if only two are connected
             if (connectedServices.length === 2) {
                 setSourceService(connectedServices[0]);
                 setTargetService(connectedServices[1]);
             }
+
+            setSourcePlaylist('');
+            setTargetPlaylistName('');
+            setError('');
+        } else {
+            setSourceService('');
+            setTargetService('');
+            setSourcePlaylist('');
+            setTargetPlaylistName('');
+            setPlaylists([]);
+            setError('');
         }
     }, [isOpen, connectedServices]);
-
-    const filteredPlaylists = playlists.filter(p => p.service_type === sourceService);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -111,15 +146,24 @@ export default function TransferModal({ isOpen, onClose, playlists, connectedSer
                             onChange={(e) => setSourcePlaylist(e.target.value)}
                             className="text-black w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             required
-                            disabled={!sourceService}
+                            disabled={!sourceService || playlistsLoading}
                         >
                             <option value="">Select playlist</option>
-                            {filteredPlaylists.map(playlist => (
-                                <option key={playlist.service_id} value={playlist.service_id}>
-                                    {playlist.name} ({playlist.track_count} tracks)
-                                </option>
-                            ))}
+                            {playlistsLoading ? (
+                                <option value="" disabled>Loading playlists...</option>
+                            ) : playlists.length === 0 ? (
+                                <option value="" disabled>No playlists found</option>
+                            ) : (
+                                playlists.map(playlist => (
+                                    <option key={playlist.service_id} value={playlist.service_id}>
+                                        {playlist.name} ({playlist.track_count} tracks)
+                                    </option>
+                                ))
+                            )}
                         </select>
+                        {playlistsLoading && (
+                            <p className="text-sm text-gray-500 mt-1">Loading playlists...</p>
+                        )}
                     </div>
 
                     {/* Target Service */}

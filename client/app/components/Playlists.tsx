@@ -64,7 +64,7 @@ export default function Playlists({ service, isConnected }: PlaylistsProps) {
     if (!isConnected) {
         return (
             <div className="bg-white rounded-lg shadow-md p-6">
-                <h3 className="text-lg font-semibold mb-4">{getServiceDisplayName()} Playlists</h3>
+                <h3 className="text-lg font-semibold mb-4 text-black">{getServiceDisplayName()} Playlists</h3>
                 <div className="text-center text-gray-500 py-8">
                     Connect {getServiceDisplayName()} to view playlists
                 </div>

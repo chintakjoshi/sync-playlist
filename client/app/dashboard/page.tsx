@@ -30,7 +30,6 @@ interface ConnectedService {
   service_type: string;
   service_user_name: string;
   created_at: string;
-  // Don't include sensitive tokens in the frontend
 }
 
 export default function Dashboard() {
@@ -40,7 +39,6 @@ export default function Dashboard() {
   const [servicesLoading, setServicesLoading] = useState(false);
   const [message, setMessage] = useState<string>('');
   const [showTransferModal, setShowTransferModal] = useState(false);
-  const [allPlaylists, setAllPlaylists] = useState<Playlist[]>([]);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -64,35 +62,6 @@ export default function Dashboard() {
       setTimeout(() => setMessage(''), 5000);
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    const fetchAllPlaylists = async () => {
-      const token = localStorage.getItem('token');
-      const playlists: Playlist[] = [];
-
-      for (const service of ['spotify', 'youtube']) {
-        if (isServiceConnected(service)) {
-          try {
-            const response = await axios.get(`http://localhost:8080/api/playlists/${service}/stored`, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            playlists.push(...response.data.playlists.map((p: any) => ({
-              ...p,
-              service_type: service
-            })));
-          } catch (error) {
-            console.error(`Failed to fetch ${service} playlists:`, error);
-          }
-        }
-      }
-
-      setAllPlaylists(playlists);
-    };
-
-    if (connectedServices.length > 0) {
-      fetchAllPlaylists();
-    }
-  }, [connectedServices]);
 
   const checkAuth = async () => {
     try {
@@ -339,7 +308,6 @@ export default function Dashboard() {
       <TransferModal
         isOpen={showTransferModal}
         onClose={() => setShowTransferModal(false)}
-        playlists={allPlaylists}
         connectedServices={connectedServices.map(s => s.service_type)}
       />
       <div className="mt-8">
