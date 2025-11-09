@@ -114,6 +114,12 @@ func GetTransferDetails(c *gin.Context) {
 	transferID := c.Param("id")
 	log.Printf("Fetching transfer details for ID: %s, User: %d", transferID, user.ID)
 
+	if transferID == "" || transferID == "undefined" {
+		log.Printf("Empty or undefined transfer ID: %s", transferID)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid transfer ID"})
+		return
+	}
+
 	// Convert transferID string to uint
 	id, err := strconv.ParseUint(transferID, 10, 32)
 	if err != nil {
