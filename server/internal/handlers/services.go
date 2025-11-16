@@ -15,6 +15,7 @@ import (
 	"server/internal/middleware"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 )
 
@@ -27,9 +28,8 @@ func HandleConnectService(c *gin.Context) {
 		return
 	}
 
-	// For OAuth flows, we need to identify the user differently since this is a browser redirect
 	userIDStr := c.Query("user_id")
-	var userID uint = 1 // Default fallback
+	var userID uint = 1
 
 	if userIDStr != "" {
 		if id, err := strconv.ParseUint(userIDStr, 10, 32); err == nil {
@@ -37,18 +37,24 @@ func HandleConnectService(c *gin.Context) {
 		}
 	}
 
-	// Use user ID in state for security
 	state := fmt.Sprintf("user-%d", userID)
 
-	url := config.AuthCodeURL(state)
-	log.Printf("Redirecting user %d to %s OAuth: %s", userID, provider, url)
-
-	// Special logging for YouTube to help debug
-	if provider == "youtube" {
-		log.Printf("YouTube OAuth config - ClientID: %s, Scopes: %v", config.ClientID, config.Scopes)
+	var authURL string
+	switch provider {
+	case "spotify":
+		authURL = config.AuthCodeURL(state,
+			oauth2.SetAuthURLParam("show_dialog", "true"),
+			oauth2.SetAuthURLParam("prompt", "login"),
+		)
+	case "youtube":
+		authURL = config.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	default:
+		authURL = config.AuthCodeURL(state)
 	}
 
-	c.Redirect(http.StatusTemporaryRedirect, url)
+	log.Printf("Redirecting user %d to %s OAuth: %s", userID, provider, authURL)
+
+	c.Redirect(http.StatusTemporaryRedirect, authURL)
 }
 
 func HandleServiceCallback(c *gin.Context) {
