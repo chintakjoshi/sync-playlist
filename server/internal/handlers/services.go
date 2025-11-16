@@ -272,3 +272,47 @@ func HandleGetConnectedServices(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"services": services})
 }
+
+func HandleDisconnectService(c *gin.Context) {
+	user, exists := middleware.GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	provider := c.Param("provider")
+
+	// Validate provider
+	if provider != "spotify" && provider != "youtube" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported service provider"})
+		return
+	}
+
+	// Delete the service connection
+	result := database.DB.Where("user_id = ? AND service_type = ?", user.ID, provider).Delete(&database.UserService{})
+	if result.Error != nil {
+		log.Printf("Failed to delete service connection: %v", result.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to disconnect service"})
+		return
+	}
+
+	// Also delete any playlists associated with this service
+	database.DB.Where("user_id = ? AND service_type = ?", user.ID, provider).Delete(&database.Playlist{})
+
+	log.Printf("User %d disconnected %s service", user.ID, provider)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Successfully disconnected %s", getServiceDisplayName(provider)),
+	})
+}
+
+func getServiceDisplayName(serviceType string) string {
+	switch serviceType {
+	case "spotify":
+		return "Spotify"
+	case "youtube":
+		return "YouTube Music"
+	default:
+		return serviceType
+	}
+}
