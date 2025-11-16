@@ -34,6 +34,7 @@ interface ConnectedService {
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
+  const [unlinkingService, setUnlinkingService] = useState<string | null>(null);
   const [connectedServices, setConnectedServices] = useState<ConnectedService[]>([]);
   const [loading, setLoading] = useState(true);
   const [servicesLoading, setServicesLoading] = useState(false);
@@ -124,6 +125,30 @@ export default function Dashboard() {
       console.error('Failed to get user info:', error);
       // Fallback: redirect without user ID (will use default)
       window.location.href = `http://127.0.0.1:8080/api/services/connect/${provider}`;
+    }
+  };
+
+  const handleUnlinkService = async (serviceType: string) => {
+    if (!confirm(`Are you sure you want to disconnect ${getServiceDisplayName(serviceType)}? This will remove all associated playlists from our system.`)) {
+      return;
+    }
+
+    try {
+      setUnlinkingService(serviceType);
+      const token = localStorage.getItem('token');
+      await axios.delete(`http://localhost:8080/api/services/${serviceType}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      fetchConnectedServices();
+
+      setMessage(`Successfully disconnected ${getServiceDisplayName(serviceType)}`);
+      setTimeout(() => setMessage(''), 5000);
+    } catch (error: any) {
+      console.error('Failed to disconnect service:', error);
+      alert(error.response?.data?.error || 'Failed to disconnect service');
+    } finally {
+      setUnlinkingService(null);
     }
   };
 
@@ -276,17 +301,32 @@ export default function Dashboard() {
                 <div className="space-y-3 text-black">
                   {['spotify', 'youtube'].map((service) => (
                     <div key={service} className="flex items-center justify-between p-3 bg-gray-50 rounded">
-                      <div>
-                        <span className="font-medium">{getServiceDisplayName(service)}</span>
-                        {isServiceConnected(service) && (
-                          <p className="text-xs text-gray-500">{getServiceUserName(service)}</p>
-                        )}
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-medium">{getServiceDisplayName(service)}</span>
+                            {isServiceConnected(service) && (
+                              <p className="text-xs text-gray-500">{getServiceUserName(service)}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            {isServiceConnected(service) ? (
+                              <>
+                                <span className="text-green-500 text-sm">Connected</span>
+                                <button
+                                  onClick={() => handleUnlinkService(service)}
+                                  disabled={unlinkingService === service}
+                                  className="text-red-600 hover:text-red-800 text-sm font-medium px-3 py-1 border border-red-300 rounded hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {unlinkingService === service ? 'Unlinking...' : 'Unlink'}
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-red-500 text-sm">Not Connected</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      {isServiceConnected(service) ? (
-                        <span className="text-green-500 text-sm">Connected</span>
-                      ) : (
-                        <span className="text-red-500 text-sm">Not Connected</span>
-                      )}
                     </div>
                   ))}
 

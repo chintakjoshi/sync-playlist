@@ -57,7 +57,13 @@ func main() {
 		protected.Use(middleware.AuthMiddleware())
 		{
 			protected.GET("/auth/me", handlers.HandleGetCurrentUser)
-			protected.GET("/services", handlers.HandleGetConnectedServices)
+
+			// Services routes (protected)
+			servicesGroup := protected.Group("/services")
+			{
+				servicesGroup.GET("", handlers.HandleGetConnectedServices)
+				servicesGroup.DELETE("/:provider", handlers.HandleDisconnectService)
+			}
 
 			// Playlists routes
 			playlistsGroup := protected.Group("/playlists")

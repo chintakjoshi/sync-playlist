@@ -15,6 +15,7 @@ import (
 	"server/internal/middleware"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 )
 
@@ -27,9 +28,8 @@ func HandleConnectService(c *gin.Context) {
 		return
 	}
 
-	// For OAuth flows, we need to identify the user differently since this is a browser redirect
 	userIDStr := c.Query("user_id")
-	var userID uint = 1 // Default fallback
+	var userID uint = 1
 
 	if userIDStr != "" {
 		if id, err := strconv.ParseUint(userIDStr, 10, 32); err == nil {
@@ -37,18 +37,24 @@ func HandleConnectService(c *gin.Context) {
 		}
 	}
 
-	// Use user ID in state for security
 	state := fmt.Sprintf("user-%d", userID)
 
-	url := config.AuthCodeURL(state)
-	log.Printf("Redirecting user %d to %s OAuth: %s", userID, provider, url)
-
-	// Special logging for YouTube to help debug
-	if provider == "youtube" {
-		log.Printf("YouTube OAuth config - ClientID: %s, Scopes: %v", config.ClientID, config.Scopes)
+	var authURL string
+	switch provider {
+	case "spotify":
+		authURL = config.AuthCodeURL(state,
+			oauth2.SetAuthURLParam("show_dialog", "true"),
+			oauth2.SetAuthURLParam("prompt", "login"),
+		)
+	case "youtube":
+		authURL = config.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	default:
+		authURL = config.AuthCodeURL(state)
 	}
 
-	c.Redirect(http.StatusTemporaryRedirect, url)
+	log.Printf("Redirecting user %d to %s OAuth: %s", userID, provider, authURL)
+
+	c.Redirect(http.StatusTemporaryRedirect, authURL)
 }
 
 func HandleServiceCallback(c *gin.Context) {
@@ -271,4 +277,48 @@ func HandleGetConnectedServices(c *gin.Context) {
 	log.Printf("Returning %d services for user %d", len(services), user.ID)
 
 	c.JSON(http.StatusOK, gin.H{"services": services})
+}
+
+func HandleDisconnectService(c *gin.Context) {
+	user, exists := middleware.GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	provider := c.Param("provider")
+
+	// Validate provider
+	if provider != "spotify" && provider != "youtube" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported service provider"})
+		return
+	}
+
+	// Delete the service connection
+	result := database.DB.Where("user_id = ? AND service_type = ?", user.ID, provider).Delete(&database.UserService{})
+	if result.Error != nil {
+		log.Printf("Failed to delete service connection: %v", result.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to disconnect service"})
+		return
+	}
+
+	// Also delete any playlists associated with this service
+	database.DB.Where("user_id = ? AND service_type = ?", user.ID, provider).Delete(&database.Playlist{})
+
+	log.Printf("User %d disconnected %s service", user.ID, provider)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Successfully disconnected %s", getServiceDisplayName(provider)),
+	})
+}
+
+func getServiceDisplayName(serviceType string) string {
+	switch serviceType {
+	case "spotify":
+		return "Spotify"
+	case "youtube":
+		return "YouTube Music"
+	default:
+		return serviceType
+	}
 }
