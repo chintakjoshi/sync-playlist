@@ -448,3 +448,23 @@ func HandleTokenHealth(c *gin.Context) {
 		"health": healthStatus,
 	})
 }
+
+func HandleRateLimitStatus(c *gin.Context) {
+	metrics := rateMonitor.GetMetrics()
+
+	c.JSON(http.StatusOK, gin.H{
+		"rate_limits": metrics,
+		"service_limits": map[string]interface{}{
+			"spotify": map[string]interface{}{
+				"requests_per_second": 10,
+				"burst":               20,
+				"description":         "Spotify Web API rate limits",
+			},
+			"youtube": map[string]interface{}{
+				"requests_per_second": 1,
+				"burst":               5,
+				"description":         "YouTube Data API conservative limits",
+			},
+		},
+	})
+}

@@ -57,6 +57,7 @@ func main() {
 		protected.Use(middleware.AuthMiddleware())
 		{
 			protected.GET("/auth/me", handlers.HandleGetCurrentUser)
+			protected.GET("/rate-limits", handlers.HandleRateLimitStatus)
 
 			// Services routes (protected)
 			servicesGroup := protected.Group("/services")

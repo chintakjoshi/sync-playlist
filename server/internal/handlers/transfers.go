@@ -13,6 +13,7 @@ import (
 
 	"server/internal/database"
 	"server/internal/middleware"
+	"server/internal/ratelimit"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -333,22 +334,27 @@ func fetchPlaylistTracks(serviceType, accessToken, playlistID string) ([]Track, 
 
 // fetchSpotifyPlaylistTracks gets tracks from a Spotify playlist
 func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string, error) {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.SpotifyService, rateLimiter)
 
 	// Simple request without fields filter
 	url := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s", playlistID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return nil, "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return nil, "", err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.SpotifyService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -400,20 +406,25 @@ func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string
 
 // fetchYouTubePlaylistTracks gets tracks from a YouTube playlist
 func fetchYouTubePlaylistTracks(accessToken, playlistID string) ([]Track, string, error) {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.YouTubeService, rateLimiter)
 	url := fmt.Sprintf("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=%s&maxResults=50", playlistID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return nil, "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return nil, "", err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.YouTubeService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -558,7 +569,7 @@ func searchTrack(serviceType, accessToken string, track Track) (Track, float64, 
 
 // searchSpotifyTrack searches for a track on Spotify
 func searchSpotifyTrack(accessToken string, track Track) (Track, float64, error) {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.SpotifyService, rateLimiter)
 
 	// Build search query - handle empty artist
 	var query string
@@ -576,15 +587,20 @@ func searchSpotifyTrack(accessToken string, track Track) (Track, float64, error)
 		fmt.Sprintf("https://api.spotify.com/v1/search?q=%s&type=track&limit=5", encodedQuery),
 		nil)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return Track{}, 0.0, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return Track{}, 0.0, err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.SpotifyService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -632,7 +648,7 @@ func searchSpotifyTrack(accessToken string, track Track) (Track, float64, error)
 
 // searchYouTubeTrack searches for a track on YouTube
 func searchYouTubeTrack(accessToken string, track Track) (Track, float64, error) {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.YouTubeService, rateLimiter)
 
 	// Build better search query for music
 	query := fmt.Sprintf("%s %s official audio", track.Name, track.Artist)
@@ -641,15 +657,20 @@ func searchYouTubeTrack(accessToken string, track Track) (Track, float64, error)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return Track{}, 0.0, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return Track{}, 0.0, err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.YouTubeService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -789,19 +810,24 @@ func createPlaylist(serviceType, accessToken, name, description string) (string,
 
 // createSpotifyPlaylist creates a Spotify playlist
 func createSpotifyPlaylist(accessToken, name, description string) (string, error) {
-	// First, get the user's ID to create the playlist for them
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.SpotifyService, rateLimiter)
+
 	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me", nil)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.SpotifyService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to get user info: %d", resp.StatusCode)
@@ -853,7 +879,7 @@ func createSpotifyPlaylist(accessToken, name, description string) (string, error
 
 // createYouTubePlaylist creates a YouTube playlist
 func createYouTubePlaylist(accessToken, name, description string) (string, error) {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.YouTubeService, rateLimiter)
 
 	createData := map[string]interface{}{
 		"snippet": map[string]string{
@@ -868,6 +894,7 @@ func createYouTubePlaylist(accessToken, name, description string) (string, error
 
 	req, err := http.NewRequest("POST", "https://www.googleapis.com/youtube/v3/playlists?part=snippet,status", strings.NewReader(string(createBody)))
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return "", err
 	}
 
@@ -875,9 +902,13 @@ func createYouTubePlaylist(accessToken, name, description string) (string, error
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.YouTubeService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -909,7 +940,7 @@ func addTrackToPlaylist(serviceType, accessToken, playlistID, trackID string) er
 
 // addTrackToSpotifyPlaylist adds a track to a Spotify playlist
 func addTrackToSpotifyPlaylist(accessToken, playlistID, trackID string) error {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.SpotifyService, rateLimiter)
 
 	addData := map[string]interface{}{
 		"uris": []string{fmt.Sprintf("spotify:track:%s", trackID)},
@@ -918,6 +949,7 @@ func addTrackToSpotifyPlaylist(accessToken, playlistID, trackID string) error {
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("https://api.spotify.com/v1/playlists/%s/tracks", playlistID), strings.NewReader(string(addBody)))
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return err
 	}
 
@@ -925,9 +957,13 @@ func addTrackToSpotifyPlaylist(accessToken, playlistID, trackID string) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.SpotifyService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -940,7 +976,7 @@ func addTrackToSpotifyPlaylist(accessToken, playlistID, trackID string) error {
 
 // addTrackToYouTubePlaylist adds a track to a YouTube playlist
 func addTrackToYouTubePlaylist(accessToken, playlistID, trackID string) error {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.YouTubeService, rateLimiter)
 
 	addData := map[string]interface{}{
 		"snippet": map[string]interface{}{
@@ -955,6 +991,7 @@ func addTrackToYouTubePlaylist(accessToken, playlistID, trackID string) error {
 
 	req, err := http.NewRequest("POST", "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet", strings.NewReader(string(addBody)))
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return err
 	}
 
@@ -962,9 +999,13 @@ func addTrackToYouTubePlaylist(accessToken, playlistID, trackID string) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.YouTubeService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
