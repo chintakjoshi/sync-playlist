@@ -10,12 +10,22 @@ import (
 	"server/internal/auth"
 	"server/internal/database"
 	"server/internal/middleware"
+	"server/internal/ratelimit"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 var tokenManager = auth.NewTokenManager(database.DB)
+
+var (
+	rateLimiter = ratelimit.NewRateLimiter()
+	rateMonitor = ratelimit.NewRateLimitMonitor(rateLimiter)
+)
+
+func init() {
+	rateMonitor.StartMonitoring()
+}
 
 // GetPlaylists fetches playlists from a specific service for the authenticated user
 func GetPlaylists(c *gin.Context) {
@@ -138,18 +148,25 @@ type PlaylistResponse struct {
 
 // Spotify API integration
 func fetchSpotifyPlaylists(accessToken string) ([]PlaylistResponse, error) {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.SpotifyService, rateLimiter)
+
 	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/playlists?limit=50", nil)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return nil, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.SpotifyService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("spotify API returned status: %d", resp.StatusCode)
@@ -196,18 +213,25 @@ func fetchSpotifyPlaylists(accessToken string) ([]PlaylistResponse, error) {
 
 // YouTube API integration
 func fetchYouTubePlaylists(accessToken string) ([]PlaylistResponse, error) {
-	client := &http.Client{}
+	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.YouTubeService, rateLimiter)
+
 	req, err := http.NewRequest("GET", "https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&mine=true&maxResults=50", nil)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return nil, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+
 	resp, err := client.Do(req)
 	if err != nil {
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+	rateMonitor.RecordRequest(ratelimit.YouTubeService, wasRateLimited, false)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("youtube API returned status: %d", resp.StatusCode)
