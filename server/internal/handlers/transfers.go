@@ -170,6 +170,25 @@ func processTransfer(transfer database.Transfer, sourceService, targetService da
 	log.Printf("Source Token: %s...", sourceService.AccessToken[:20])
 	log.Printf("Target Token: %s...", targetService.AccessToken[:20])
 
+	// Refresh tokens before starting transfer
+	if err := tokenManager.RefreshTokenIfNeeded(&sourceService); err != nil {
+		log.Printf("Failed to refresh source token: %v", err)
+		db.Model(&transfer).Updates(map[string]interface{}{
+			"status":        "failed",
+			"error_message": "Source service token refresh failed: " + err.Error(),
+		})
+		return
+	}
+
+	if err := tokenManager.RefreshTokenIfNeeded(&targetService); err != nil {
+		log.Printf("Failed to refresh target token: %v", err)
+		db.Model(&transfer).Updates(map[string]interface{}{
+			"status":        "failed",
+			"error_message": "Target service token refresh failed: " + err.Error(),
+		})
+		return
+	}
+
 	// Update transfer status using the new session
 	db.Model(&transfer).Update("status", "processing")
 

@@ -7,8 +7,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"server/internal/auth"
 	"server/internal/database"
@@ -17,6 +20,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
+)
+
+const (
+	googleRevocationURL  = "https://oauth2.googleapis.com/revoke"
+	spotifyRevocationURL = "https://accounts.spotify.com/api/token"
 )
 
 func HandleConnectService(c *gin.Context) {
@@ -294,8 +302,22 @@ func HandleDisconnectService(c *gin.Context) {
 		return
 	}
 
+	// Get the service connection first
+	var userService database.UserService
+	result := database.DB.Where("user_id = ? AND service_type = ?", user.ID, provider).First(&userService)
+	if result.Error != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Service connection not found"})
+		return
+	}
+
+	// Revoke the token before deleting
+	if err := revokeServiceToken(provider, userService.AccessToken); err != nil {
+		log.Printf("Failed to revoke token for %s: %v", provider, err)
+		// Continue with deletion even if revocation fails
+	}
+
 	// Delete the service connection
-	result := database.DB.Where("user_id = ? AND service_type = ?", user.ID, provider).Delete(&database.UserService{})
+	result = database.DB.Where("user_id = ? AND service_type = ?", user.ID, provider).Delete(&database.UserService{})
 	if result.Error != nil {
 		log.Printf("Failed to delete service connection: %v", result.Error)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to disconnect service"})
@@ -312,6 +334,75 @@ func HandleDisconnectService(c *gin.Context) {
 	})
 }
 
+func revokeServiceToken(provider, accessToken string) error {
+	switch provider {
+	case "spotify":
+		return revokeSpotifyToken(accessToken)
+	case "youtube":
+		return revokeGoogleToken(accessToken)
+	default:
+		return fmt.Errorf("unsupported provider: %s", provider)
+	}
+}
+
+func revokeSpotifyToken(accessToken string) error {
+	config := auth.GetOAuthConfig("spotify")
+	if config == nil {
+		return fmt.Errorf("spotify OAuth config not found")
+	}
+
+	data := url.Values{}
+	data.Set("token", accessToken)
+	data.Set("token_type_hint", "access_token")
+
+	req, err := http.NewRequest("POST", spotifyRevocationURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return err
+	}
+
+	req.SetBasicAuth(config.ClientID, config.ClientSecret)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("spotify revocation returned status: %d", resp.StatusCode)
+	}
+
+	log.Printf("Successfully revoked Spotify token")
+	return nil
+}
+
+func revokeGoogleToken(accessToken string) error {
+	req, err := http.NewRequest("POST", googleRevocationURL, nil)
+	if err != nil {
+		return err
+	}
+
+	q := req.URL.Query()
+	q.Add("token", accessToken)
+	req.URL.RawQuery = q.Encode()
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("google revocation returned status: %d", resp.StatusCode)
+	}
+
+	log.Printf("Successfully revoked Google token")
+	return nil
+}
+
 func getServiceDisplayName(serviceType string) string {
 	switch serviceType {
 	case "spotify":
@@ -321,4 +412,39 @@ func getServiceDisplayName(serviceType string) string {
 	default:
 		return serviceType
 	}
+}
+
+func HandleTokenHealth(c *gin.Context) {
+	user, exists := middleware.GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// Get all services for the user
+	var services []database.UserService
+	result := database.DB.Where("user_id = ?", user.ID).Find(&services)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch services"})
+		return
+	}
+
+	healthStatus := make(map[string]interface{})
+	for _, service := range services {
+		valid, err := tokenManager.ValidateToken(&service)
+		status := "healthy"
+		if err != nil || !valid {
+			status = "unhealthy"
+		}
+
+		healthStatus[service.ServiceType] = map[string]interface{}{
+			"status":     status,
+			"error":      err,
+			"expires_in": time.Until(time.Unix(service.TokenExpiry, 0)).String(),
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"health": healthStatus,
+	})
 }

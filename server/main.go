@@ -62,6 +62,7 @@ func main() {
 			servicesGroup := protected.Group("/services")
 			{
 				servicesGroup.GET("", handlers.HandleGetConnectedServices)
+				servicesGroup.GET("/health", handlers.HandleTokenHealth)
 				servicesGroup.DELETE("/:provider", handlers.HandleDisconnectService)
 			}
 
