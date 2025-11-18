@@ -7,12 +7,15 @@ import (
 	"net/http"
 	"time"
 
+	"server/internal/auth"
 	"server/internal/database"
 	"server/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+var tokenManager = auth.NewTokenManager(database.DB)
 
 // GetPlaylists fetches playlists from a specific service for the authenticated user
 func GetPlaylists(c *gin.Context) {
@@ -31,10 +34,24 @@ func GetPlaylists(c *gin.Context) {
 		return
 	}
 
+	// Refresh token if needed
+	if err := tokenManager.RefreshTokenIfNeeded(&userService); err != nil {
+		log.Printf("Token refresh failed for %s: %v", serviceType, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Token refresh failed: " + err.Error()})
+		return
+	}
+
 	// Fetch playlists from the service
 	playlists, err := fetchPlaylistsFromService(serviceType, userService.AccessToken)
 	if err != nil {
 		log.Printf("Failed to fetch playlists from %s: %v", serviceType, err)
+
+		// If API call fails, try to validate token
+		if valid, _ := tokenManager.ValidateToken(&userService); !valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Service connection expired. Please reconnect."})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch playlists: " + err.Error()})
 		return
 	}
