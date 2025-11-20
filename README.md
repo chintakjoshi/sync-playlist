@@ -71,8 +71,8 @@ A production-ready Progressive Web App (PWA) that allows users to **seamlessly t
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                         Nginx (Port 80)                      │
-│                    Reverse Proxy & Router                    │
+│                         Nginx (Port 80)                     |
+│                    Reverse Proxy & Router                   │
 └─────────────────────┬───────────────────────────────────────┘
                       │
         ┌─────────────┴─────────────┐
@@ -647,20 +647,6 @@ Contributions are welcome! Please follow these steps:
 - **Go**: Follow [Effective Go](https://golang.org/doc/effective_go.html)
 - **TypeScript/React**: Use ESLint configuration provided
 - **Commits**: Use conventional commits format
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
----
-
-## 👨‍💻 Author
-
-**Your Name**
-- GitHub: [@yourusername](https://github.com/yourusername)
-- LinkedIn: [Your Profile](https://linkedin.com/in/yourprofile)
 
 ---
 
