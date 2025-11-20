@@ -194,6 +194,12 @@ JWT_SECRET=your-super-secret-jwt-key-change-in-production
 # URLs (adjust for production)
 FRONTEND_URL=http://localhost:3000
 BACKEND_URL=http://127.0.0.1:8080
+
+# Rate Limiting Configuration
+SPOTIFY_REQUESTS_PER_SECOND=10
+SPOTIFY_BURST_LIMIT=20
+YOUTUBE_REQUESTS_PER_SECOND=1
+YOUTUBE_BURST_LIMIT=5
 ```
 
 ### 3. OAuth Setup
