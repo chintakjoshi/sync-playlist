@@ -1,19 +1,14 @@
 "use client";
 
-import { useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function AuthSuccess() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const token = searchParams.get('token');
 
   useEffect(() => {
-    if (token) {
-      localStorage.setItem('token', token);
-      router.push('/dashboard');
-    }
-  }, [token, router]);
+    router.push("/dashboard");
+  }, [router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

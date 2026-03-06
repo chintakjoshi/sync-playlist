@@ -1,24 +1,29 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { useEffect, useState } from "react";
+
+import { api, getApiErrorMessage } from "../../lib/api";
 
 interface Transfer {
-    ID: number;
+    id: number;
     source_service: string;
+    source_playlist_id: string;
     source_playlist_name: string;
     target_service: string;
+    target_playlist_id: string;
     target_playlist_name: string;
     status: string;
     tracks_total: number;
     tracks_matched: number;
     tracks_failed: number;
-    CreatedAt: string;
-    UpdatedAt: string;
+    error_message: string;
+    created_at: string;
+    updated_at: string;
 }
 
 interface TransferTrack {
-    ID: number;
+    id: number;
+    transfer_id: number;
     source_track_id: string;
     source_track_name: string;
     source_artist: string;
@@ -40,14 +45,11 @@ export default function TransferHistory() {
         try {
             setLoading(true);
             setError('');
-            const token = localStorage.getItem('token');
-            const response = await axios.get('http://localhost:8080/api/transfers', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setTransfers(response.data.transfers);
-        } catch (error: any) {
+            const response = await api.get('/api/transfers');
+            setTransfers(Array.isArray(response.data.transfers) ? response.data.transfers : []);
+        } catch (error: unknown) {
             console.error('Failed to fetch transfers:', error);
-            setError(error.response?.data?.error || 'Failed to fetch transfers');
+            setError(getApiErrorMessage(error, 'Failed to fetch transfers'));
         } finally {
             setLoading(false);
         }
@@ -62,25 +64,43 @@ export default function TransferHistory() {
 
         try {
             setError('');
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`http://localhost:8080/api/transfers/${transferId}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/api/transfers/${transferId}`);
             setTransferTracks(response.data.tracks || []);
             setSelectedTransfer(response.data.transfer);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Failed to fetch transfer details:', error);
-            if (error.response?.status === 404) {
-                setError('Transfer not found. It might have been deleted.');
-            } else {
-                setError(error.response?.data?.error || 'Failed to fetch transfer details');
+            if (typeof error === "object" && error !== null && "response" in error) {
+                const response = (error as { response?: { status?: number } }).response;
+                if (response?.status === 404) {
+                    setError('Transfer not found. It might have been deleted.');
+                    return;
+                }
             }
+            setError(getApiErrorMessage(error, 'Failed to fetch transfer details'));
         }
     };
 
     useEffect(() => {
         fetchTransfers();
     }, []);
+
+    useEffect(() => {
+        const hasActiveTransfers = transfers.some((transfer) =>
+            transfer.status === 'pending' || transfer.status === 'processing'
+        );
+        if (!hasActiveTransfers) {
+            return;
+        }
+
+        const interval = window.setInterval(() => {
+            fetchTransfers();
+            if (selectedTransfer?.id) {
+                fetchTransferDetails(selectedTransfer.id);
+            }
+        }, 5000);
+
+        return () => window.clearInterval(interval);
+    }, [transfers, selectedTransfer]);
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -158,14 +178,14 @@ export default function TransferHistory() {
                 <div className="space-y-4">
                     {transfers.map(transfer => (
                         <div
-                            key={transfer.ID}
+                            key={transfer.id}
                             className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
                             onClick={() => {
-                                if (!transfer.ID) {
+                                if (!transfer.id) {
                                     console.error('Transfer ID is missing:', transfer);
                                     return;
                                 }
-                                fetchTransferDetails(transfer.ID);
+                                fetchTransferDetails(transfer.id);
                             }}
                         >
                             <div className="flex justify-between items-start">
@@ -188,15 +208,20 @@ export default function TransferHistory() {
                                         {getStatusDisplay(transfer.status)}
                                     </span>
                                     <span className="text-xs text-gray-500 text-right">
-                                        {formatDate(transfer.CreatedAt)}
+                                        {formatDate(transfer.created_at)}
                                     </span>
                                 </div>
                             </div>
 
                             {/* Transfer details */}
-                            {selectedTransfer?.ID === transfer.ID && (
+                            {selectedTransfer?.id === transfer.id && (
                                 <div className="mt-4 border-t pt-4">
                                     <h4 className="font-medium mb-3 text-gray-700">Track Details:</h4>
+                                    {transfer.error_message && (
+                                        <div className="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                            {transfer.error_message}
+                                        </div>
+                                    )}
                                     {transferTracks.length === 0 ? (
                                         <div className="text-center text-gray-500 py-4">
                                             No track details available
@@ -206,7 +231,7 @@ export default function TransferHistory() {
                                             <div className="text-black max-h-60 overflow-y-auto space-y-2">
                                                 {transferTracks.map((track, index) => (
                                                     <div
-                                                        key={track.ID || `track-${index}`}
+                                                        key={track.id || `track-${index}`}
                                                         className={`flex justify-between items-center py-2 px-3 rounded ${track.status === 'matched' ? 'bg-green-50 border border-green-200' :
                                                             track.status === 'not_found' ? 'bg-red-50 border border-red-200' :
                                                                 'bg-yellow-50 border border-yellow-200'

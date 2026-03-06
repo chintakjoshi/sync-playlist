@@ -26,8 +26,12 @@ func main() {
 	r := gin.Default()
 
 	// CORS configuration for local development
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://client:3000"},
+		AllowOrigins:     []string{frontendURL},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,
@@ -48,7 +52,6 @@ func main() {
 		servicesGroup := api.Group("/services")
 		{
 			// These need to be public because they're called via browser redirects
-			servicesGroup.GET("/connect/:provider", handlers.HandleConnectService)
 			servicesGroup.GET("/callback/:provider", handlers.HandleServiceCallback)
 		}
 
@@ -63,6 +66,7 @@ func main() {
 			servicesGroup := protected.Group("/services")
 			{
 				servicesGroup.GET("", handlers.HandleGetConnectedServices)
+				servicesGroup.POST("/connect/:provider", handlers.HandleConnectService)
 				servicesGroup.GET("/health", handlers.HandleTokenHealth)
 				servicesGroup.DELETE("/:provider", handlers.HandleDisconnectService)
 			}

@@ -40,17 +40,38 @@ func GenerateJWT(userID uint) (string, error) {
 }
 
 func HandleGoogleLogin(c *gin.Context) {
-	url := auth.GoogleOAuthConfig.AuthCodeURL("state")
+	state, nonce, err := auth.GenerateOAuthState(auth.StatePurposeLogin, "google", 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize OAuth state"})
+		return
+	}
+
+	setCookie(c, auth.OAuthStateCookieName(auth.StatePurposeLogin, "google"), nonce, 600, true)
+	url := auth.GoogleOAuthConfig.AuthCodeURL(state)
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
 func HandleGoogleCallback(c *gin.Context) {
 	code := c.Query("code")
+	state := c.Query("state")
 
 	if code == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Authorization code not provided"})
 		return
 	}
+
+	stateCookieName := auth.OAuthStateCookieName(auth.StatePurposeLogin, "google")
+	stateCookie, err := c.Cookie(stateCookieName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "OAuth state cookie not found"})
+		return
+	}
+	if _, err := auth.ValidateOAuthState(state, auth.StatePurposeLogin, "google", stateCookie); err != nil {
+		clearCookie(c, stateCookieName)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid OAuth state"})
+		return
+	}
+	clearCookie(c, stateCookieName)
 
 	// Exchange code for token
 	token, err := auth.GoogleOAuthConfig.Exchange(context.Background(), code)
@@ -116,15 +137,16 @@ func HandleGoogleCallback(c *gin.Context) {
 		return
 	}
 
-	// Redirect to frontend with token
+	setCookie(c, auth.SessionCookieName, jwtToken, int((24 * time.Hour).Seconds()), true)
+
+	// Redirect to frontend with authenticated session cookie
 	frontendURL := os.Getenv("FRONTEND_URL")
-	redirectURL := fmt.Sprintf("%s/auth/success?token=%s", frontendURL, jwtToken)
-	log.Printf("Redirecting to: %s", redirectURL)
+	redirectURL := fmt.Sprintf("%s/dashboard?message=login_success", frontendURL)
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
 func HandleLogout(c *gin.Context) {
-	// In a real app, you might want to blacklist the token
+	clearCookie(c, auth.SessionCookieName)
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
 

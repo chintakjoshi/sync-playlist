@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +27,12 @@ const (
 )
 
 func HandleConnectService(c *gin.Context) {
+	user, exists := middleware.GetUserFromContext(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
 	provider := c.Param("provider")
 
 	config := auth.GetOAuthConfig(provider)
@@ -36,16 +41,12 @@ func HandleConnectService(c *gin.Context) {
 		return
 	}
 
-	userIDStr := c.Query("user_id")
-	var userID uint = 1
-
-	if userIDStr != "" {
-		if id, err := strconv.ParseUint(userIDStr, 10, 32); err == nil {
-			userID = uint(id)
-		}
+	state, nonce, err := auth.GenerateOAuthState(auth.StatePurposeLink, provider, user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize OAuth state"})
+		return
 	}
-
-	state := fmt.Sprintf("user-%d", userID)
+	setCookie(c, auth.OAuthStateCookieName(auth.StatePurposeLink, provider), nonce, 600, true)
 
 	var authURL string
 	switch provider {
@@ -60,9 +61,8 @@ func HandleConnectService(c *gin.Context) {
 		authURL = config.AuthCodeURL(state)
 	}
 
-	log.Printf("Redirecting user %d to %s OAuth: %s", userID, provider, authURL)
-
-	c.Redirect(http.StatusTemporaryRedirect, authURL)
+	log.Printf("Generated %s OAuth URL for user %d", provider, user.ID)
+	c.JSON(http.StatusOK, gin.H{"auth_url": authURL})
 }
 
 func HandleServiceCallback(c *gin.Context) {
@@ -91,6 +91,20 @@ func HandleServiceCallback(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported service provider"})
 		return
 	}
+
+	stateCookieName := auth.OAuthStateCookieName(auth.StatePurposeLink, provider)
+	stateCookie, err := c.Cookie(stateCookieName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "OAuth state cookie not found"})
+		return
+	}
+	stateClaims, err := auth.ValidateOAuthState(state, auth.StatePurposeLink, provider, stateCookie)
+	if err != nil {
+		clearCookie(c, stateCookieName)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid OAuth state"})
+		return
+	}
+	clearCookie(c, stateCookieName)
 
 	log.Printf("Exchanging code for %s token", provider)
 
@@ -143,7 +157,6 @@ func HandleServiceCallback(c *gin.Context) {
 		}
 
 	case "youtube":
-		log.Printf("YouTube token obtained: %+v", token)
 		client := config.Client(context.Background(), token)
 
 		// First, try to get basic Google user info (this usually works with any Google scope)
@@ -212,18 +225,8 @@ func HandleServiceCallback(c *gin.Context) {
 		}
 	}
 
-	// Extract user ID from state parameter for security
-	var userID uint = 1 // Default fallback
-
-	// Simple state parsing: "user-{id}"
-	if len(state) > 5 && state[:5] == "user-" {
-		if id, err := strconv.ParseUint(state[5:], 10, 32); err == nil {
-			userID = uint(id)
-		}
-	}
-
 	userService := database.UserService{
-		UserID:          userID,
+		UserID:          stateClaims.UserID,
 		ServiceType:     provider,
 		AccessToken:     token.AccessToken,
 		RefreshToken:    token.RefreshToken,
@@ -281,10 +284,12 @@ func HandleGetConnectedServices(c *gin.Context) {
 		return
 	}
 
-	// Log for debugging
-	log.Printf("Returning %d services for user %d", len(services), user.ID)
+	response := make([]ConnectedServiceResponse, 0, len(services))
+	for _, service := range services {
+		response = append(response, newConnectedServiceResponse(service))
+	}
 
-	c.JSON(http.StatusOK, gin.H{"services": services})
+	c.JSON(http.StatusOK, gin.H{"services": response})
 }
 
 func HandleDisconnectService(c *gin.Context) {
@@ -439,7 +444,7 @@ func HandleTokenHealth(c *gin.Context) {
 
 		healthStatus[service.ServiceType] = map[string]interface{}{
 			"status":     status,
-			"error":      err,
+			"error":      errorString(err),
 			"expires_in": time.Until(time.Unix(service.TokenExpiry, 0)).String(),
 		}
 	}
@@ -467,4 +472,11 @@ func HandleRateLimitStatus(c *gin.Context) {
 			},
 		},
 	})
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

@@ -24,7 +24,8 @@ services:
       - DB_PASSWORD=password
       - DB_NAME=playlist_tracker
       - DB_PORT=5432
-      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - JWT_SECRET=${JWT_SECRET}
+      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
       - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
@@ -32,7 +33,7 @@ services:
       - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID}
       - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET}
       - FRONTEND_URL=http://localhost:3000
-      - BACKEND_URL=http://127.0.0.1:8080
+      - BACKEND_URL=http://localhost:8080
     depends_on:
       - postgres
     networks:

@@ -31,6 +31,36 @@ type UserService struct {
 	ServiceUserName string `json:"service_user_name"`
 }
 
+func (u *UserService) BeforeSave(tx *gorm.DB) error {
+	encryptedAccessToken, err := encryptToken(u.AccessToken)
+	if err != nil {
+		return err
+	}
+	encryptedRefreshToken, err := encryptToken(u.RefreshToken)
+	if err != nil {
+		return err
+	}
+
+	u.AccessToken = encryptedAccessToken
+	u.RefreshToken = encryptedRefreshToken
+	return nil
+}
+
+func (u *UserService) AfterFind(tx *gorm.DB) error {
+	decryptedAccessToken, err := decryptToken(u.AccessToken)
+	if err != nil {
+		return err
+	}
+	decryptedRefreshToken, err := decryptToken(u.RefreshToken)
+	if err != nil {
+		return err
+	}
+
+	u.AccessToken = decryptedAccessToken
+	u.RefreshToken = decryptedRefreshToken
+	return nil
+}
+
 type Playlist struct {
 	gorm.Model
 	UserID       uint   `gorm:"not null" json:"user_id"`
@@ -87,6 +117,10 @@ type TransferTrack struct {
 }
 
 func InitDB() error {
+	if err := ValidateEncryptionConfig(); err != nil {
+		return err
+	}
+
 	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
 		os.Getenv("DB_HOST"),
