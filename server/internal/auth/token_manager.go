@@ -55,7 +55,15 @@ func (tm *TokenManager) RefreshTokenIfNeeded(userService *database.UserService) 
 	}
 	userService.TokenExpiry = newToken.Expiry.Unix()
 
-	return tm.db.Save(userService).Error
+	db := tm.db
+	if db == nil {
+		db = database.DB
+	}
+	if db == nil {
+		return fmt.Errorf("database not initialized")
+	}
+
+	return db.Save(userService).Error
 }
 
 // ForceRefreshToken forces a token refresh regardless of expiry

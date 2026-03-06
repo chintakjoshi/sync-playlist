@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { useEffect, useState } from "react";
+
+import { api, getApiErrorMessage } from "../../lib/api";
 
 interface Playlist {
     service_id: string;
@@ -38,13 +39,11 @@ export default function TransferModal({ isOpen, onClose, connectedServices }: Tr
             try {
                 setPlaylistsLoading(true);
                 setError('');
-                const token = localStorage.getItem('token');
-                const response = await axios.get(`http://localhost:8080/api/playlists/${sourceService}`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                const response = await api.get(`/api/playlists/${sourceService}`);
                 setPlaylists(response.data.playlists || []);
-            } catch (err: any) {
-                console.error(`Failed to fetch ${sourceService} playlists:`, err);
+            } catch (error: unknown) {
+                console.error(`Failed to fetch ${sourceService} playlists:`, error);
+                setError(getApiErrorMessage(error, 'Failed to fetch playlists'));
                 setPlaylists([]);
             } finally {
                 setPlaylistsLoading(false);
@@ -84,22 +83,19 @@ export default function TransferModal({ isOpen, onClose, connectedServices }: Tr
         try {
             setLoading(true);
             setError('');
-            const token = localStorage.getItem('token');
 
-            const response = await axios.post('http://localhost:8080/api/transfers', {
+            const response = await api.post('/api/transfers', {
                 source_service: sourceService,
                 source_playlist_id: sourcePlaylist,
                 target_service: targetService,
                 target_playlist_name: targetPlaylistName,
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
 
             alert(`Transfer started! Transfer ID: ${response.data.transfer_id}`);
             onClose();
-        } catch (err: any) {
-            console.error('Transfer failed:', err);
-            setError(err.response?.data?.error || 'Transfer failed');
+        } catch (error: unknown) {
+            console.error('Transfer failed:', error);
+            setError(getApiErrorMessage(error, 'Transfer failed'));
         } finally {
             setLoading(false);
         }

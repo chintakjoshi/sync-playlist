@@ -1,27 +1,19 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Playlists from '../components/Playlists';
-import TransferModal from '../components/TransferModal';
-import TransferHistory from '../components/TransferHistory';
-import axios from 'axios';
+import { Suspense, useEffect, useState } from "react";
+import Image from "next/image";
+import { useRouter, useSearchParams } from "next/navigation";
+
+import Playlists from "../components/Playlists";
+import TransferModal from "../components/TransferModal";
+import TransferHistory from "../components/TransferHistory";
+import { api, getApiErrorMessage } from "../../lib/api";
 
 interface User {
   id: number;
   email: string;
   name: string;
   avatarURL?: string;
-}
-
-interface Playlist {
-  id: string;
-  name: string;
-  service_type: string;
-  service_id: string;
-  description: string;
-  track_count: number;
-  image_url: string;
 }
 
 interface ConnectedService {
@@ -32,13 +24,13 @@ interface ConnectedService {
   created_at: string;
 }
 
-export default function Dashboard() {
+function DashboardContent() {
   const [user, setUser] = useState<User | null>(null);
   const [unlinkingService, setUnlinkingService] = useState<string | null>(null);
   const [connectedServices, setConnectedServices] = useState<ConnectedService[]>([]);
   const [loading, setLoading] = useState(true);
   const [servicesLoading, setServicesLoading] = useState(false);
-  const [message, setMessage] = useState<string>('');
+  const [message, setMessage] = useState<string>("");
   const [showTransferModal, setShowTransferModal] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,40 +42,30 @@ export default function Dashboard() {
     const messageParam = searchParams.get('message');
     if (messageParam) {
       if (messageParam === 'spotify_connected') {
-        setMessage('Successfully connected to Spotify!');
-        // Refresh services list
+        setMessage("Successfully connected to Spotify!");
         fetchConnectedServices();
       } else if (messageParam === 'youtube_connected') {
-        setMessage('Successfully connected to YouTube Music!');
-        // Refresh services list
+        setMessage("Successfully connected to YouTube Music!");
+        fetchConnectedServices();
+      } else if (messageParam === "login_success") {
+        setMessage("Successfully logged in.");
         fetchConnectedServices();
       }
 
-      // Clear the message after 5 seconds
-      setTimeout(() => setMessage(''), 5000);
+      setTimeout(() => setMessage(""), 5000);
     }
+    // Dashboard auth/message bootstrapping is intentionally driven by search params.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const checkAuth = async () => {
     try {
-      const token = localStorage.getItem('token');
-
-      if (!token) {
-        router.push('/');
-        return;
-      }
-
-      const response = await axios.get('http://localhost:8080/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get("/api/auth/me");
       setUser(response.data.user);
 
-      // Fetch connected services after auth check
       fetchConnectedServices();
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      localStorage.removeItem('token');
-      router.push('/');
+    } catch {
+      router.push("/");
     } finally {
       setLoading(false);
     }
@@ -92,17 +74,17 @@ export default function Dashboard() {
   const fetchConnectedServices = async () => {
     try {
       setServicesLoading(true);
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:8080/api/services', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get("/api/services");
       setConnectedServices(response.data.services);
-    } catch (error: any) {
-      console.error('Failed to fetch connected services:', error);
-      if (error.response?.status === 401) {
-        // Token is invalid, redirect to login
-        localStorage.removeItem('token');
-        router.push('/');
+    } catch (error: unknown) {
+      console.error("Failed to fetch connected services:", error);
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        (error as { response?: { status?: number } }).response?.status === 401
+      ) {
+        router.push("/");
       }
     } finally {
       setServicesLoading(false);
@@ -111,20 +93,10 @@ export default function Dashboard() {
 
   const handleConnectService = async (provider: string) => {
     try {
-      // First get the current user to get their ID
-      const token = localStorage.getItem('token');
-      const userResponse = await axios.get('http://localhost:8080/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      const userId = userResponse.data.user.id;
-
-      // Include user ID in the OAuth URL
-      window.location.href = `http://127.0.0.1:8080/api/services/connect/${provider}?user_id=${userId}`;
+      const response = await api.post(`/api/services/connect/${provider}`);
+      window.location.href = response.data.auth_url;
     } catch (error) {
-      console.error('Failed to get user info:', error);
-      // Fallback: redirect without user ID (will use default)
-      window.location.href = `http://127.0.0.1:8080/api/services/connect/${provider}`;
+      console.error("Failed to connect service:", error);
     }
   };
 
@@ -135,18 +107,15 @@ export default function Dashboard() {
 
     try {
       setUnlinkingService(serviceType);
-      const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:8080/api/services/${serviceType}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/api/services/${serviceType}`);
 
       fetchConnectedServices();
 
       setMessage(`Successfully disconnected ${getServiceDisplayName(serviceType)}`);
-      setTimeout(() => setMessage(''), 5000);
-    } catch (error: any) {
+      setTimeout(() => setMessage(""), 5000);
+    } catch (error: unknown) {
       console.error('Failed to disconnect service:', error);
-      alert(error.response?.data?.error || 'Failed to disconnect service');
+      alert(getApiErrorMessage(error, 'Failed to disconnect service'));
     } finally {
       setUnlinkingService(null);
     }
@@ -154,17 +123,11 @@ export default function Dashboard() {
 
   const handleLogout = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (token) {
-        await axios.post('http://localhost:8080/api/auth/logout', {}, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-      }
+      await api.post("/api/auth/logout");
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error("Logout error:", error);
     } finally {
-      localStorage.removeItem('token');
-      router.push('/');
+      router.push("/");
     }
   };
 
@@ -207,7 +170,14 @@ export default function Dashboard() {
             {user && (
               <div className="flex items-center space-x-2">
                 {user.avatarURL && (
-                  <img src={user.avatarURL} alt={user.name} className="w-8 h-8 rounded-full" />
+                  <Image
+                    src={user.avatarURL}
+                    alt={user.name}
+                    width={32}
+                    height={32}
+                    className="w-8 h-8 rounded-full"
+                    unoptimized
+                  />
                 )}
                 <span className="text-gray-700">Welcome, {user.name}</span>
               </div>
@@ -354,5 +324,19 @@ export default function Dashboard() {
         <TransferHistory />
       </div>
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
   );
 }

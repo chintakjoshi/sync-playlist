@@ -95,13 +95,18 @@ func GetTransfers(c *gin.Context) {
 	}
 
 	var transfers []database.Transfer
-	result := database.DB.Where("user_id = ?", user.ID).Order("created_at DESC").Limit(50).Find(&transfers)
+	result := database.DB.Where("user_id = ?", user.ID).Order("created_at DESC").Find(&transfers)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch transfers"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"transfers": transfers})
+	response := make([]TransferResponse, 0, len(transfers))
+	for _, transfer := range transfers {
+		response = append(response, newTransferResponse(transfer))
+	}
+
+	c.JSON(http.StatusOK, gin.H{"transfers": response})
 }
 
 // GetTransferDetails returns detailed information about a transfer
@@ -142,12 +147,14 @@ func GetTransferDetails(c *gin.Context) {
 		// Continue without tracks
 	}
 
-	log.Printf("Found transfer: %+v", transfer)
-	log.Printf("Found %d transfer tracks", len(transferTracks))
+	responseTracks := make([]TransferTrackResponse, 0, len(transferTracks))
+	for _, track := range transferTracks {
+		responseTracks = append(responseTracks, newTransferTrackResponse(track))
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"transfer": transfer,
-		"tracks":   transferTracks,
+		"transfer": newTransferResponse(transfer),
+		"tracks":   responseTracks,
 	})
 }
 
@@ -168,8 +175,6 @@ func processTransfer(transfer database.Transfer, sourceService, targetService da
 	log.Printf("=== STARTING TRANSFER %d ===", transfer.ID)
 	log.Printf("Source: %s, Playlist: %s", transfer.SourceService, transfer.SourcePlaylistID)
 	log.Printf("Target: %s", transfer.TargetService)
-	log.Printf("Source Token: %s...", sourceService.AccessToken[:20])
-	log.Printf("Target Token: %s...", targetService.AccessToken[:20])
 
 	// Refresh tokens before starting transfer
 	if err := tokenManager.RefreshTokenIfNeeded(&sourceService); err != nil {
@@ -336,35 +341,38 @@ func fetchPlaylistTracks(serviceType, accessToken, playlistID string) ([]Track, 
 func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string, error) {
 	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.SpotifyService, rateLimiter)
 
-	// Simple request without fields filter
-	url := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s", playlistID)
-
-	req, err := http.NewRequest("GET", url, nil)
+	playlistName, err := getSpotifyPlaylistName(client, accessToken, playlistID)
 	if err != nil {
-		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
 		return nil, "", err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := client.Do(req)
-	if err != nil {
-		rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
-		return nil, "", err
-	}
-	defer resp.Body.Close()
+	nextURL := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s/tracks?limit=100", playlistID)
+	var tracks []Track
 
-	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
-	rateMonitor.RecordRequest(ratelimit.SpotifyService, wasRateLimited, false)
+	for nextURL != "" {
+		req, err := http.NewRequest("GET", nextURL, nil)
+		if err != nil {
+			rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
+			return nil, "", err
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("Spotify playlist API error: %d, body: %s", resp.StatusCode, string(body))
-		return nil, "", fmt.Errorf("spotify API returned status: %d", resp.StatusCode)
-	}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		resp, err := client.Do(req)
+		if err != nil {
+			rateMonitor.RecordRequest(ratelimit.SpotifyService, false, true)
+			return nil, "", err
+		}
 
-	var spotifyResponse struct {
-		Name   string `json:"name"`
-		Tracks struct {
+		wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+		rateMonitor.RecordRequest(ratelimit.SpotifyService, wasRateLimited, false)
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, "", fmt.Errorf("spotify API returned status: %d: %s", resp.StatusCode, string(body))
+		}
+
+		var spotifyResponse struct {
 			Items []struct {
 				Track struct {
 					ID      string `json:"id"`
@@ -377,75 +385,42 @@ func fetchSpotifyPlaylistTracks(accessToken, playlistID string) ([]Track, string
 					} `json:"album"`
 				} `json:"track"`
 			} `json:"items"`
-		} `json:"tracks"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&spotifyResponse); err != nil {
-		return nil, "", err
-	}
-
-	log.Printf("Spotify playlist '%s' has %d tracks", spotifyResponse.Name, len(spotifyResponse.Tracks.Items))
-
-	var tracks []Track
-	for _, item := range spotifyResponse.Tracks.Items {
-		artist := ""
-		if len(item.Track.Artists) > 0 {
-			artist = item.Track.Artists[0].Name
+			Next string `json:"next"`
 		}
 
-		tracks = append(tracks, Track{
-			ID:     item.Track.ID,
-			Name:   item.Track.Name,
-			Artist: artist,
-			Album:  item.Track.Album.Name,
-		})
+		if err := json.NewDecoder(resp.Body).Decode(&spotifyResponse); err != nil {
+			resp.Body.Close()
+			return nil, "", err
+		}
+		resp.Body.Close()
+
+		for _, item := range spotifyResponse.Items {
+			if item.Track.ID == "" {
+				continue
+			}
+
+			artist := ""
+			if len(item.Track.Artists) > 0 {
+				artist = item.Track.Artists[0].Name
+			}
+
+			tracks = append(tracks, Track{
+				ID:     item.Track.ID,
+				Name:   item.Track.Name,
+				Artist: artist,
+				Album:  item.Track.Album.Name,
+			})
+		}
+
+		nextURL = spotifyResponse.Next
 	}
 
-	return tracks, spotifyResponse.Name, nil
+	return tracks, playlistName, nil
 }
 
 // fetchYouTubePlaylistTracks gets tracks from a YouTube playlist
 func fetchYouTubePlaylistTracks(accessToken, playlistID string) ([]Track, string, error) {
 	client := ratelimit.NewRateLimitedHTTPClient(ratelimit.YouTubeService, rateLimiter)
-	url := fmt.Sprintf("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=%s&maxResults=50", playlistID)
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
-		return nil, "", err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := client.Do(req)
-	if err != nil {
-		rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-
-	wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
-	rateMonitor.RecordRequest(ratelimit.YouTubeService, wasRateLimited, false)
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("YouTube playlist items API error: %d, body: %s", resp.StatusCode, string(body))
-		return nil, "", fmt.Errorf("youtube API returned status: %d", resp.StatusCode)
-	}
-
-	var youtubeResponse struct {
-		Items []struct {
-			Snippet struct {
-				Title      string `json:"title"`
-				ResourceID struct {
-					VideoID string `json:"videoId"`
-				} `json:"resourceId"`
-			} `json:"snippet"`
-		} `json:"items"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&youtubeResponse); err != nil {
-		return nil, "", err
-	}
 
 	// For YouTube, we need to get the playlist name separately
 	playlistName, err := getYouTubePlaylistName(accessToken, playlistID)
@@ -454,21 +429,102 @@ func fetchYouTubePlaylistTracks(accessToken, playlistID string) ([]Track, string
 	}
 
 	var tracks []Track
-	for _, item := range youtubeResponse.Items {
-		// Parse title to extract artist and track name
-		title := item.Snippet.Title
-		artist, trackName := parseYouTubeTitle(title)
+	pageToken := ""
 
-		log.Printf("YouTube track - Original: '%s', Parsed: Artist='%s', Track='%s'", title, artist, trackName)
+	for {
+		requestURL := fmt.Sprintf("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=%s&maxResults=50", playlistID)
+		if pageToken != "" {
+			requestURL += "&pageToken=" + url.QueryEscape(pageToken)
+		}
 
-		tracks = append(tracks, Track{
-			ID:     item.Snippet.ResourceID.VideoID,
-			Name:   trackName,
-			Artist: artist,
-		})
+		req, err := http.NewRequest("GET", requestURL, nil)
+		if err != nil {
+			rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
+			return nil, "", err
+		}
+
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		resp, err := client.Do(req)
+		if err != nil {
+			rateMonitor.RecordRequest(ratelimit.YouTubeService, false, true)
+			return nil, "", err
+		}
+
+		wasRateLimited := resp.StatusCode == http.StatusTooManyRequests
+		rateMonitor.RecordRequest(ratelimit.YouTubeService, wasRateLimited, false)
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			log.Printf("YouTube playlist items API error: %d, body: %s", resp.StatusCode, string(body))
+			return nil, "", fmt.Errorf("youtube API returned status: %d", resp.StatusCode)
+		}
+
+		var youtubeResponse struct {
+			Items []struct {
+				Snippet struct {
+					Title      string `json:"title"`
+					ResourceID struct {
+						VideoID string `json:"videoId"`
+					} `json:"resourceId"`
+				} `json:"snippet"`
+			} `json:"items"`
+			NextPageToken string `json:"nextPageToken"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&youtubeResponse); err != nil {
+			resp.Body.Close()
+			return nil, "", err
+		}
+		resp.Body.Close()
+
+		for _, item := range youtubeResponse.Items {
+			title := item.Snippet.Title
+			artist, trackName := parseYouTubeTitle(title)
+
+			tracks = append(tracks, Track{
+				ID:     item.Snippet.ResourceID.VideoID,
+				Name:   trackName,
+				Artist: artist,
+			})
+		}
+
+		if youtubeResponse.NextPageToken == "" {
+			break
+		}
+		pageToken = youtubeResponse.NextPageToken
 	}
 
 	return tracks, playlistName, nil
+}
+
+func getSpotifyPlaylistName(client *ratelimit.RateLimitedHTTPClient, accessToken, playlistID string) (string, error) {
+	requestURL := fmt.Sprintf("https://api.spotify.com/v1/playlists/%s?fields=name", playlistID)
+	req, err := http.NewRequest("GET", requestURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("spotify API returned status: %d: %s", resp.StatusCode, string(body))
+	}
+
+	var playlistResponse struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&playlistResponse); err != nil {
+		return "", err
+	}
+
+	return playlistResponse.Name, nil
 }
 
 // getYouTubePlaylistName gets the name of a YouTube playlist

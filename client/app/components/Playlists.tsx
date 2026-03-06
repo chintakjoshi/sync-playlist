@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import axios from 'axios';
+import Image from "next/image";
+import { useEffect, useState } from "react";
+
+import { api, getApiErrorMessage } from "../../lib/api";
 
 interface Playlist {
     id?: number;
@@ -30,15 +32,12 @@ export default function Playlists({ service, isConnected }: PlaylistsProps) {
         try {
             setLoading(true);
             setError('');
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`http://localhost:8080/api/playlists/${service}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await api.get(`/api/playlists/${service}`);
             // Ensure we always set an array, even if response is null/undefined
             setPlaylists(Array.isArray(response.data?.playlists) ? response.data.playlists : []);
-        } catch (err: any) {
-            console.error(`Failed to fetch ${service} playlists:`, err);
-            setError(err.response?.data?.error || 'Failed to fetch playlists');
+        } catch (error: unknown) {
+            console.error(`Failed to fetch ${service} playlists:`, error);
+            setError(getApiErrorMessage(error, 'Failed to fetch playlists'));
             setPlaylists([]); // Reset to empty array on error
         } finally {
             setLoading(false);
@@ -55,10 +54,12 @@ export default function Playlists({ service, isConnected }: PlaylistsProps) {
 
     useEffect(() => {
         if (isConnected) {
-            fetchPlaylists();
+            void fetchPlaylists();
         } else {
             setPlaylists([]); // Clear playlists when not connected
         }
+        // fetchPlaylists depends only on current props/state used in this effect.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [service, isConnected]);
 
     if (!isConnected) {
@@ -108,10 +109,13 @@ export default function Playlists({ service, isConnected }: PlaylistsProps) {
                         >
                             <div className="flex items-start space-x-3">
                                 {playlist.image_url ? (
-                                    <img
+                                    <Image
                                         src={playlist.image_url}
                                         alt={playlist.name}
+                                        width={64}
+                                        height={64}
                                         className="w-16 h-16 rounded object-cover"
+                                        unoptimized
                                     />
                                 ) : (
                                     <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center">

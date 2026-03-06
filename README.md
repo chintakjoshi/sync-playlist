@@ -1,6 +1,6 @@
 # 🎵 Playlist Tracker
 
-A production-ready Progressive Web App (PWA) that allows users to **seamlessly transfer and sync playlists** across multiple music streaming platforms. Built with modern architecture, containerized deployment, and enterprise-grade rate limiting.
+A web app that allows users to **transfer and sync playlists** across multiple music streaming platforms. Built with a Next.js frontend, Go backend, PostgreSQL, and Docker-based local deployment.
 
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)](https://golang.org/)
@@ -39,7 +39,7 @@ A production-ready Progressive Web App (PWA) that allows users to **seamlessly t
 - Prevents API quota exhaustion
 
 ### 📊 Transfer Tracking
-- Real-time transfer status updates
+- Automatic transfer status polling in the dashboard
 - Track-level success/failure reporting
 - Match confidence scores for each track
 - Failed track identification for manual review
@@ -191,9 +191,12 @@ YOUTUBE_CLIENT_SECRET=your-youtube-client-secret
 # JWT Secret (generate a strong random string)
 JWT_SECRET=your-super-secret-jwt-key-change-in-production
 
+# Token Encryption Key (32 raw characters or base64-encoded 32-byte key)
+TOKEN_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
+
 # URLs (adjust for production)
 FRONTEND_URL=http://localhost:3000
-BACKEND_URL=http://127.0.0.1:8080
+BACKEND_URL=http://localhost:8080
 
 # Rate Limiting Configuration
 SPOTIFY_REQUESTS_PER_SECOND=10
@@ -214,12 +217,12 @@ YOUTUBE_BURST_LIMIT=5
 #### Spotify
 1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 2. Create an app
-3. Add redirect URI: `http://127.0.0.1:8080/api/services/callback/spotify`
+3. Add redirect URI: `http://localhost:8080/api/services/callback/spotify`
 
 #### YouTube
 1. Use the same Google Cloud project
 2. Enable YouTube Data API v3
-3. Add redirect URI: `http://127.0.0.1:8080/api/services/callback/youtube`
+3. Add redirect URI: `http://localhost:8080/api/services/callback/youtube`
 
 ### 4. Launch Application
 
@@ -307,7 +310,7 @@ air
 | Endpoint | Method | Description | Auth Required |
 |----------|--------|-------------|---------------|
 | `/api/services` | GET | Get connected services | Yes |
-| `/api/services/connect/:provider` | GET | Connect Spotify/YouTube | No |
+| `/api/services/connect/:provider` | POST | Create an authenticated Spotify/YouTube OAuth URL | Yes |
 | `/api/services/callback/:provider` | GET | Service OAuth callback | No |
 | `/api/services/:provider` | DELETE | Disconnect service | Yes |
 | `/api/services/health` | GET | Token health check | Yes |
@@ -504,6 +507,9 @@ docker-compose restart [service_name]
 ```bash
 # Generate secure JWT secret
 openssl rand -base64 64
+
+# Generate a 32-byte token encryption key
+openssl rand -base64 32
 ```
 
 ---
@@ -539,9 +545,9 @@ Access at `/api/rate-limits`:
 # Application health
 curl http://localhost:8080/api/health
 
-# Token health
-curl -H "Authorization: Bearer YOUR_JWT" \
-  http://localhost:8080/api/services/health
+# Protected endpoints use the session cookie established after browser login.
+# Example with an exported cookie jar:
+curl -b cookies.txt http://localhost:8080/api/services/health
 ```
 
 ---
@@ -554,9 +560,8 @@ curl -H "Authorization: Bearer YOUR_JWT" \
 # Test authentication
 curl http://localhost:8080/api/health
 
-# Test with JWT (replace YOUR_JWT)
-curl -H "Authorization: Bearer YOUR_JWT" \
-  http://localhost:8080/api/auth/me
+# After logging in via the browser, export/import the session cookie and use:
+curl -b cookies.txt http://localhost:8080/api/auth/me
 ```
 
 ### Database Access
